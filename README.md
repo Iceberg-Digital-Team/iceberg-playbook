@@ -1,48 +1,32 @@
-# Iceberg Playbook
+# React + TypeScript + Vite
 
-## Purpose
-Internal support problem-solving and knowledge platform for Iceberg Digital.
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-## Current Status
-Frontend prototype / MVP.
+Currently, two official plugins are available:
 
-## Core Concepts
-- **Playbooks**: Top-level knowledge areas grouping domain-specific troubleshooting workflows and operational documentation.
-- **Issues**: Specific support scenarios, customer inquiries, or error states requiring resolution.
-- **Guides**: Step-by-step resolution paths linked to issues, detailing troubleshooting actions and solutions.
-- **SOPs**: Standard Operating Procedures establishing verified support processes.
-- **Guide Version History**: Version tracking and restore capabilities for guide content changes.
-- **Internal Login UI**: Clean workspace sign-in interface for support personnel.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-> **Important**: The current authentication is mock/frontend-only. A real database, Supabase Auth, permissions, Row-Level Security (RLS), file storage, and Jira integration will be implemented later.
+## React Compiler
 
-## Local Development
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-### Prerequisites
-- Node.js (v20+ recommended)
-- npm
+## Expanding the Oxlint configuration
 
-### Setup & Installation
-```bash
-npm install
+If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
 ```
 
-### Running the Development Server
-```bash
-npm run dev
-```
-
-### Running Tests
-```bash
-node --test tests/*.test.mjs
-```
-
-### Typechecking & Building for Production
-```bash
-npm run build
-```
-
-### Linting
-```bash
-npm run lint
-```
+See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
