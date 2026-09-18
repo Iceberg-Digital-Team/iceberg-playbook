@@ -41,6 +41,23 @@ test('exact Issue code ranks first above title and summary mentions, in any case
     }
 });
 
+test('exact Guide and SOP codes rank first above records that mention them', () => {
+    const set = {
+        issues: [issue({ id: 'I-1', title: 'Regression of G-001' })],
+        guides: [guide({ id: 'G-002', summary: 'replaces g-001' }), guide({ id: 'G-001', title: 'Restart' })],
+        sops: [sop({ id: 'SOP-002', title: 'Supersedes SOP-001' }), sop({ id: 'SOP-001', title: 'Audit' })],
+    };
+    assert.deepEqual(ids('G-001', set), ['G-001', 'I-1', 'G-002']);
+    assert.deepEqual(ids('g-001', set), ['G-001', 'I-1', 'G-002']);
+    assert.deepEqual(ids('SOP-001', set), ['SOP-001', 'SOP-002']);
+    assert.deepEqual(ids('sop-001?', set), ['SOP-001', 'SOP-002']);
+
+    storage.clear();
+    assert.equal(core.searchKnowledge('WA-G02', realData(), {})[0].id, 'WA-G02');
+    const sopId = data.getSOPs()[0].id;
+    assert.equal(core.searchKnowledge(sopId, realData(), {})[0].id, sopId);
+});
+
 test('hyphenated code is one token and does not match its parts scattered in text', () => {
     assert.deepEqual(core.tokenize('WA-001'), ['wa-001']);
     const set = { issues: [issue({ id: 'ISS-010', title: 'iss tracker 001' }), issue({ id: 'ISS-001', title: 'Target' })] };
@@ -191,7 +208,7 @@ test('real data (R-07): Guide results are unique and come only from current getG
     assert.deepEqual(resultIds, expected);
 });
 
-// Troubleshooting (1.2)
+// Troubleshooting
 
 const tsMatch = (playbookId, category, symptom, issues) =>
     core.matchTroubleshootingIssue(playbookId, category, symptom, issues)?.id ?? null;
@@ -208,11 +225,28 @@ test('troubleshooting: manual rules return their Issue for the exact Playbook, c
         ['whatsapp', 'Embedded Signup', 'Popup closes abruptly', 'WA-003'],
         ['whatsapp', 'Embedded Signup', 'Blank window displays', 'WA-003'],
         ['meta-business', 'Business Verification', 'Document rejected', 'META-006'],
-        ['zoom', 'Meetings', 'Integration fails to trigger', 'ZOOM-002'],
     ];
     for (const [pb, cat, sym, expected] of cases) {
         assert.equal(tsMatch(pb, cat, sym, issues), expected, `${pb} / ${cat} / ${sym}`);
     }
+});
+
+test('troubleshooting (1.3): Zoom/Meetings generic symptoms return null, never ZOOM-002', () => {
+    const zoom = [issue({ id: 'ZOOM-002', playbookId: 'zoom', title: 'Meeting link expired', symptoms: ['Meeting link expired'] })];
+    for (const s of genericSymptoms) assert.equal(tsMatch('zoom', 'Meetings', s, zoom), null, `synthetic / ${s}`);
+
+    storage.clear();
+    const issues = data.getIssues();
+    assert.ok(issues.some(i => i.id === 'ZOOM-002' && i.playbookId === 'zoom'), 'seed ZOOM-002 must exist for this test to mean anything');
+    for (const s of genericSymptoms) assert.equal(tsMatch('zoom', 'Meetings', s, issues), null, `real / ${s}`);
+});
+
+test('troubleshooting (1.3): Zoom/Meetings falls through to normal matching when every word is present', () => {
+    const zoom = [
+        issue({ id: 'ZOOM-002', playbookId: 'zoom', title: 'Meeting link expired' }),
+        issue({ id: 'ZOOM-009', playbookId: 'zoom', title: 'Meeting not starting', symptoms: ['Meeting not starting'] }),
+    ];
+    assert.equal(tsMatch('zoom', 'Meetings', 'Meeting not starting', zoom), 'ZOOM-009');
 });
 
 test('troubleshooting: missing or cross-Playbook manual target does not throw and falls through to symptom matching', () => {
