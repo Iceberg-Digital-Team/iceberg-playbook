@@ -19,5 +19,4 @@ export function resolveTroubleshooting(
   return matchTroubleshootingIssue(playbookId, category, symptom, issues);
 }
 
-export { matchTroubleshootingIssue };
 export type { SearchOptions, ContentItem };

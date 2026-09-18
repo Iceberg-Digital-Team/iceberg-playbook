@@ -206,9 +206,8 @@ export function searchKnowledge(
 }
 
 export const TROUBLESHOOTING_STOPWORDS = new Set([
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
-  'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'or', 'that',
-  'the', 'to', 'was', 'were', 'will', 'with', 'other', 'issue', 'problem'
+  'and', 'are', 'for', 'from', 'has', 'its', 'that',
+  'the', 'was', 'were', 'will', 'with', 'other', 'issue', 'problem'
 ]);
 
 export function matchTroubleshootingIssue(
