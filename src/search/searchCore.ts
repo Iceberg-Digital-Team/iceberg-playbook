@@ -204,3 +204,115 @@ export function searchKnowledge(
 
   return scoredResults.map(r => r.item);
 }
+
+export const TROUBLESHOOTING_STOPWORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
+  'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'or', 'that',
+  'the', 'to', 'was', 'were', 'will', 'with', 'other', 'issue', 'problem'
+]);
+
+export function matchTroubleshootingIssue(
+  playbookId: string,
+  category: string,
+  symptom: string,
+  issues: Issue[]
+): Issue | null {
+  if (!playbookId || !category || !symptom) {
+    return null;
+  }
+
+  const rawSymptom = symptom.trim();
+  if (rawSymptom.toLowerCase() === 'other') {
+    return null;
+  }
+
+  const playbookIssues = (issues ?? []).filter(i => i.playbookId === playbookId);
+  if (playbookIssues.length === 0) {
+    return null;
+  }
+
+  let manualTargetId: string | null = null;
+  if (playbookId === 'whatsapp' && category === 'Phone Number') {
+    if (rawSymptom === 'Number already registered') {
+      manualTargetId = 'WA-001';
+    } else if (rawSymptom === 'OTP not received') {
+      manualTargetId = 'WA-002';
+    }
+  } else if (playbookId === 'whatsapp' && category === 'Embedded Signup') {
+    if (rawSymptom === 'Popup closes abruptly' || rawSymptom === 'Blank window displays') {
+      manualTargetId = 'WA-003';
+    }
+  } else if (playbookId === 'meta-business' && category === 'Business Verification') {
+    if (rawSymptom === 'Document rejected') {
+      manualTargetId = 'META-006';
+    }
+  } else if (playbookId === 'zoom' && category === 'Meetings') {
+    manualTargetId = 'ZOOM-002';
+  }
+
+  if (manualTargetId) {
+    const manualIssue = playbookIssues.find(i => i.id === manualTargetId);
+    if (manualIssue) {
+      return manualIssue;
+    }
+  }
+
+  const rawTokens = tokenize(rawSymptom);
+  const meaningfulTokens = rawTokens.filter(
+    t => t.length > 2 && !TROUBLESHOOTING_STOPWORDS.has(t)
+  );
+
+  if (meaningfulTokens.length === 0) {
+    return null;
+  }
+
+  const matchingCandidates: { item: Issue; score: number; originalIndex: number }[] = [];
+
+  for (let idx = 0; idx < playbookIssues.length; idx++) {
+    const item = playbookIssues[idx];
+    const titleLower = item.title.toLowerCase();
+    const symptomsLower = (item.symptoms ?? []).join(' ').toLowerCase();
+    const errorLower = (item.errorMessage ?? '').toLowerCase();
+
+    let matchesAll = true;
+    for (const token of meaningfulTokens) {
+      const inTitle = titleLower.includes(token);
+      const inSymptomsOrError = symptomsLower.includes(token) || errorLower.includes(token);
+      if (!inTitle && !inSymptomsOrError) {
+        matchesAll = false;
+        break;
+      }
+    }
+
+    if (!matchesAll) {
+      continue;
+    }
+
+    let score = 0;
+    for (const token of meaningfulTokens) {
+      let tokenWeight = 0;
+      if (titleLower.includes(token)) {
+        tokenWeight = Math.max(tokenWeight, SEARCH_WEIGHTS.title);
+      }
+      if (symptomsLower.includes(token) || errorLower.includes(token)) {
+        tokenWeight = Math.max(tokenWeight, SEARCH_WEIGHTS.symptomsOrError);
+      }
+      score += tokenWeight;
+    }
+
+    matchingCandidates.push({ item, score, originalIndex: idx });
+  }
+
+  if (matchingCandidates.length === 0) {
+    return null;
+  }
+
+  matchingCandidates.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return a.originalIndex - b.originalIndex;
+  });
+
+  return matchingCandidates[0].item;
+}
