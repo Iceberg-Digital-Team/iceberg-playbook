@@ -245,8 +245,6 @@ export function matchTroubleshootingIssue(
     if (rawSymptom === 'Document rejected') {
       manualTargetId = 'META-006';
     }
-  } else if (playbookId === 'zoom' && category === 'Meetings') {
-    manualTargetId = 'ZOOM-002';
   }
 
   if (manualTargetId) {
