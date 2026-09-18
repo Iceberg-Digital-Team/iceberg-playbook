@@ -6,6 +6,4 @@ export function executeSearch(query: string, options: SearchOptions = {}): Conte
   return searchKnowledge(query, data, options);
 }
 
-export const search = executeSearch;
-export { searchKnowledge };
 export type { SearchOptions, ContentItem };
