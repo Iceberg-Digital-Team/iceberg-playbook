@@ -10,6 +10,9 @@ interface TopbarProps {
 export const Topbar: React.FC<TopbarProps> = ({ onMenuToggle }) => {
   const { navigate } = useRouter();
   const [notice, setNotice] = useState(false);
+  // No notification source exists yet - this stays false until a real
+  // notification system is built. The dot must never show for zero notifications.
+  const [hasUnreadNotifications] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +71,7 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuToggle }) => {
         {/* Notifications */}
         <button className="notification-btn" aria-label="Notifications" onClick={() => setNotice(!notice)} aria-expanded={notice}>
           <Bell className="notification-icon" />
-          <span className="notification-badge" />
+          {hasUnreadNotifications && <span className="notification-badge" />}
         </button>
 
         {notice && <div className="notification-popover" role="status">No new notifications.</div>}
