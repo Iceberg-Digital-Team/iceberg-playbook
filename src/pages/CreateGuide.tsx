@@ -7,6 +7,8 @@ import { GuideArticle } from '../components/knowledge/GuideArticle';
 import { IssueSelector } from '../components/knowledge/IssueSelector';
 import { PageHeader, FormSection, StateMessage } from '../components/knowledge/ApplicationUI';
 import { StringList, StepEditor, revealInvalid } from '../components/knowledge/EditorFields';
+import { MediaUploadField } from '../components/knowledge/MediaUploadField';
+import { type FileMetadata } from '../components/knowledge/mediaUtils';
 
 export function CreateGuide() {
   const { path, params } = useRouter();
@@ -21,6 +23,8 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
   const [difficulty,setDifficulty]=useState<GuideContent['difficulty']>(base?.difficulty||'Medium'); const [estimatedTime,setEstimatedTime]=useState(base?.estimatedTime||'15 min');
   const [checklist,setChecklist]=useState(base?guideChecklist(base):[]); const [info,setInfo]=useState(base?.importantInformation||'');
   const [video,setVideo]=useState(base?.video||''); const [pdf,setPdf]=useState(base?.pdf||'');
+  const [videoMeta, setVideoMeta] = useState<FileMetadata | null>(null);
+  const [pdfMeta, setPdfMeta] = useState<FileMetadata | null>(null);
   const [steps,setSteps]=useState<Omit<Step,'number'>[]>(base?structuredClone(base.steps):[{title:'',description:''}]);
   const [problems,setProblems]=useState<CommonProblem[]>(base?structuredClone(base.commonProblems):[]);
   const [notes,setNotes]=useState(base?.internalNotes||''); const [changes,setChanges]=useState(''); const [error,setError]=useState(''); const [preview,setPreview]=useState(false);
@@ -34,7 +38,12 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
   const hasChanges=!base||JSON.stringify(guideContent(content))!==JSON.stringify(guideContent(base));
   const back=()=>navigate(base&&pb?`/playbooks/${pb.slug}/guides/${base.id}`:'/create');
   const publish=()=>{setError(''); if(blocked) {setError('Select an existing Issue without a solution Guide.');return;}
-    try {const saved=base?publishGuideUpdate(base.id,content,base.currentVersionId,changes):addGuide({...content,issueId,playbookId:pb!.id,revisionHistory:[]});navigate(`/playbooks/${pb!.slug}/guides/${saved.id}`);}
+    try {
+      const saved = base
+        ? publishGuideUpdate(base.id, content, base.currentVersionId, changes)
+        : addGuide({ ...content, issueId, playbookId: pb!.id, revisionHistory: [] });
+      navigate(`/playbooks/${pb!.slug}/guides/${saved.id}`);
+    }
     catch(e){setError(e instanceof Error?e.message:'Could not publish the Guide.');}
   };
   if(preview&&base) return <div className="guide-article"><section className="issue-connection"><h2>Preview Changes</h2><p>Unpublished changes · Current Guide remains v{formatGuideVersion(base.versionNumber)}.</p><div className="inline-actions"><button className="btn-secondary" onClick={()=>setPreview(false)}>Back to Editing</button><button className="btn-primary" disabled={!hasChanges} onClick={publish}>Publish Update</button></div></section>{error&&<p className="knowledge-error" role="alert">{error}</p>}<GuideArticle guide={{...base,...structuredClone(content)}} versionLabel="Unpublished preview"/></div>;
@@ -52,9 +61,39 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
     <FormSection title="Summary" hint="Explain what this solves, when to use it and the expected outcome in 2–4 sentences."><label>Guide Summary *<textarea aria-label="Guide Summary" required rows={4} value={summary} onChange={e=>setSummary(e.target.value)}/></label></FormSection>
     <FormSection title="Before You Start" hint="Access, identifiers and permissions needed before following the solution."><StringList label="Checklist item" values={checklist} onChange={setChecklist}/></FormSection>
     <FormSection title="Important Information" optional open={!!info}><label>Warnings & limitations<textarea value={info} rows={3} onChange={e=>setInfo(e.target.value)}/></label></FormSection>
-    <FormSection title="Video Tutorial" optional open={!!video}><label>Video Tutorial URL<input type="url" pattern="https?://.*" value={video} onChange={e=>setVideo(e.target.value)}/></label><p className="helper-text">YouTube, Vimeo or a direct video file. Other links open at their source.</p></FormSection>
-    <FormSection title="Step-by-Step"><StepEditor steps={steps} onChange={setSteps}/></FormSection>
-    <FormSection title="PDF Guide" optional open={!!pdf}><label>PDF Guide URL<input type="url" pattern="https?://.*" value={pdf} onChange={e=>setPdf(e.target.value)}/></label></FormSection>
+    <FormSection title="Video Tutorial" optional open={!!video}>
+      <MediaUploadField
+        type="video"
+        accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+        acceptedFormatsText="Accepted formats: MP4, WebM, MOV"
+        dropText="Drag & drop a video here"
+        buttonText="Choose Video"
+        value={video}
+        initialValue={base?.video}
+        fileMeta={videoMeta}
+        onChange={(url, file) => {
+          setVideo(url);
+          setVideoMeta(file ? { name: file.name, size: file.size } : null);
+        }}
+      />
+    </FormSection>
+    <FormSection title="Step-by-Step"><StepEditor steps={steps} initialSteps={base?.steps} onChange={setSteps}/></FormSection>
+    <FormSection title="PDF Guide" optional open={!!pdf}>
+      <MediaUploadField
+        type="pdf"
+        accept="application/pdf,.pdf"
+        acceptedFormatsText="Accepted format: PDF"
+        dropText="Drag & drop a PDF here"
+        buttonText="Choose PDF"
+        value={pdf}
+        initialValue={base?.pdf}
+        fileMeta={pdfMeta}
+        onChange={(url, file) => {
+          setPdf(url);
+          setPdfMeta(file ? { name: file.name, size: file.size } : null);
+        }}
+      />
+    </FormSection>
     <FormSection title="Common Problems" optional open={!!problems.length} hint="Small troubleshooting notes for problems encountered while following these steps.">
       {problems.map((p,i)=><div className="form-section-body" key={i}>{(['problem','cause','solution'] as const).map(field=><label key={field}>{field[0].toUpperCase()+field.slice(1)}<textarea rows={2} value={p[field]} onChange={e=>setProblems(problems.map((v,n)=>n===i?{...v,[field]:e.target.value}:v))}/></label>)}<button className="back-link" type="button" onClick={()=>setProblems(problems.filter((_,n)=>n!==i))}><Trash2 size={14}/>Remove problem {i+1}</button></div>)}
       <button className="btn-secondary" type="button" onClick={()=>setProblems([...problems,{problem:'',cause:'',solution:''}])}><Plus size={14}/>Add Problem</button>

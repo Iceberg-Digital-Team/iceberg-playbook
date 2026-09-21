@@ -6,6 +6,7 @@ import { GuideArticle } from '../components/knowledge/GuideArticle';
 import { GuideHistory, RestoreGuideDialog } from '../components/knowledge/GuideHistory';
 import '../components/knowledge/Knowledge.css';
 import { StateMessage } from '../components/knowledge/ApplicationUI';
+import { getGuideSessionMedia } from '../components/knowledge/mediaUtils';
 
 export function GuideDetail() {
   const { params, navigate } = useRouter();
@@ -19,6 +20,16 @@ export function GuideDetail() {
   if (params.version && !version) return <StateMessage title="Version not found" action={<a href={baseUrl}>Back to Current Version</a>}/>;
   const historical = version && version.id !== current.currentVersionId;
   const displayed = version ? { ...current, ...guideContent(version), updatedAt: version.createdAt, author: version.createdBy } : { ...current, author: current.updatedBy };
+  const sessionMedia = !historical ? getGuideSessionMedia(current.id) : undefined;
+  const guideToRender = sessionMedia ? {
+    ...displayed,
+    video: sessionMedia.video ?? displayed.video,
+    pdf: sessionMedia.pdf ?? displayed.pdf,
+    steps: displayed.steps.map((s, i) => ({
+      ...s,
+      screenshot: sessionMedia.screenshots?.[i] ?? s.screenshot
+    }))
+  } : displayed;
   const restore = () => {
     if (!confirmation) return;
     try {
@@ -46,7 +57,7 @@ export function GuideDetail() {
     {historical && <section className="issue-connection"><h2>You are viewing an older version</h2><p>Version {formatGuideVersion(version.versionNumber)} · {formatGuideDate(version.createdAt)} · {version.createdBy}</p>
       <div className="knowledge-actions"><a className="btn-secondary" href={baseUrl}>Back to Current Version</a><button className="btn-primary" onClick={() => setConfirmation({ target: version.id, expected: current.currentVersionId, number: version.versionNumber, current: current.versionNumber })}>Restore This Version</button></div>
     </section>}
-    <GuideArticle key={version?.id || current.currentVersionId} guide={displayed} versionLabel={`${historical ? 'Viewing version' : 'Current version'}: v${formatGuideVersion(version?.versionNumber || current.versionNumber)}`} />
+    <GuideArticle key={version?.id || current.currentVersionId} guide={guideToRender} versionLabel={`${historical ? 'Viewing version' : 'Current version'}: v${formatGuideVersion(version?.versionNumber || current.versionNumber)}`} />
     <GuideHistory guide={current} versions={getGuideVersions(current.id)} baseUrl={baseUrl} />
     {confirmation && <RestoreGuideDialog current={confirmation.current} target={confirmation.number} onCancel={() => setConfirmation(undefined)} onRestore={restore} />}
   </div>;
