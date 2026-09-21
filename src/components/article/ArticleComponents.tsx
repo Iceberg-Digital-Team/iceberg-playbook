@@ -57,13 +57,26 @@ export function RevisionHistory({ history }: { history: Revision[] }) {
   return <section className="article-section"><h2>Version History</h2><ol className="guide-history">{history.map((r,i)=><li key={i}><div className="guide-version-line"><strong>v{r.version}</strong><span>{r.date}</span><span>{r.updatedBy}</span></div><p>{r.changes}</p></li>)}</ol></section>;
 }
 export function VideoSection({ url }: { url?: string }) {
-  const [playing, setPlaying] = useState(false); const [duration, setDuration] = useState(''); const [failed,setFailed]=useState(false);
+  const [playing, setPlaying] = useState(false); const [duration, setDuration] = useState(''); const [failed, setFailed] = useState(false);
   const safe = safeMediaUrl(url); if (!safe) return null;
-  const embed = videoEmbed(safe); const direct = /\.(mp4|webm|ogg)(?:$|\?)/i.test(safe);
-  return <section className="article-section"><h2>Video Tutorial</h2>{direct ? <><video className="guide-video" controls preload="metadata" src={safe} onError={()=>setFailed(true)} onLoadedMetadata={e=>{ const seconds=e.currentTarget.duration; if(Number.isFinite(seconds)) setDuration(`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`); }} />{duration && <p className="helper-text">Duration {duration}</p>}{failed && <p className="helper-text">Video could not be loaded.</p>}</> : embed ? playing ? <iframe className="guide-video" title="Guide video tutorial" src={embed} allow="fullscreen; picture-in-picture" allowFullScreen/> : <button className="video-cover" onClick={()=>setPlaying(true)}><Play size={26} aria-hidden="true"/><span>Play video tutorial</span></button> : null}<a className="media-source" href={safe} target="_blank" rel="noreferrer">Open video tutorial ↗</a></section>;
+  const embed = videoEmbed(safe);
+  const direct = safe.startsWith('blob:') || /\.(mp4|webm|mov|ogg)(?:$|\?|#)/i.test(safe) || !embed;
+  const isExternalUrl = safe.startsWith('http://') || safe.startsWith('https://');
+  return <section className="article-section"><h2>Video Tutorial</h2>{embed ? (playing ? <iframe className="guide-video" title="Guide video tutorial" src={embed} allow="fullscreen; picture-in-picture" allowFullScreen/> : <button className="video-cover" onClick={()=>setPlaying(true)}><Play size={26} aria-hidden="true"/><span>Play video tutorial</span></button>) : direct ? <><video className="guide-video" controls preload="metadata" src={safe} onError={()=>setFailed(true)} onLoadedMetadata={e=>{ const seconds=e.currentTarget.duration; if(Number.isFinite(seconds)) setDuration(`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`); }} />{duration && <p className="helper-text">Duration {duration}</p>}{failed && <p className="helper-text">Video could not be loaded.</p>}</> : null}{isExternalUrl && <a className="media-source" href={safe} target="_blank" rel="noreferrer">Open video tutorial ↗</a>}</section>;
 }
-export function PDFSection({ url, updatedAt }: { url?: string; updatedAt: string }) {
+export function PDFSection({ url, updatedAt, filename: customFilename }: { url?: string; updatedAt: string; filename?: string }) {
   const safe = safeMediaUrl(url); if(!safe) return null;
-  let filename = 'Complete Guide.pdf'; try { const last = decodeURIComponent(new URL(safe).pathname.split('/').pop() || ''); if(last.toLowerCase().endsWith('.pdf')) filename=last; } catch { /* Display the fallback name. */ }
-  return <section className="article-section"><h2>PDF Guide</h2><div className="document-row"><FileText size={25} aria-hidden="true"/><div><strong>{filename}</strong><p className="helper-text">PDF · Guide updated {updatedAt}</p></div><a href={safe} target="_blank" rel="noreferrer" download><Download size={15} aria-hidden="true"/>Download PDF</a></div></section>;
+  let filename = customFilename || 'Complete Guide.pdf';
+  if (!customFilename) {
+    try {
+      const parsed = new URL(safe);
+      if (parsed.hash && parsed.hash.length > 1) {
+        filename = decodeURIComponent(parsed.hash.slice(1));
+      } else {
+        const last = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+        if (last.toLowerCase().endsWith('.pdf')) filename = last;
+      }
+    } catch { /* Fallback */ }
+  }
+  return <section className="article-section"><h2>PDF Guide</h2><div className="document-row"><FileText size={25} aria-hidden="true"/><div><strong>{filename}</strong><p className="helper-text">PDF · Guide updated {updatedAt}</p></div><a href={safe} target="_blank" rel="noreferrer" download={filename}><Download size={15} aria-hidden="true"/>Download PDF</a></div></section>;
 }

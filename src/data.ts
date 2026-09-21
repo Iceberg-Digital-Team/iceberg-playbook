@@ -471,12 +471,15 @@ const defaultGuides: Omit<Guide, 'issueId'>[] = [
     requirements: ['Phone number active', 'Access to source BSP', 'WABA Admin Access on target WABA'],
     beforeYouStart: ['Check if source BSP has any contract locks.', 'Disable any active auto-reply bots on the source number.'],
     importantInformation: 'No message history will be migrated. Template messages must be recreated on the new WABA.',
+    video: 'https://assets.icebergplaybook.test/videos/whatsapp-bsp-migration.mp4#whatsapp-bsp-migration.mp4',
+    pdf: 'https://assets.icebergplaybook.test/docs/whatsapp-bsp-migration-guide.pdf#whatsapp-bsp-migration-guide.pdf',
     steps: [
       {
         number: 1,
         title: 'Obtain migration consent',
         description: 'Verify client has signed off and owns the number. Get source WABA ID.',
         estimatedTime: '5 min',
+        screenshot: 'https://assets.icebergplaybook.test/screenshots/migration-consent.png#migration-consent.png',
         successIndicator: 'Migration consent documented.'
       },
       {
@@ -484,6 +487,7 @@ const defaultGuides: Omit<Guide, 'issueId'>[] = [
         title: 'Initiate migration in WhatsApp Manager',
         description: 'Navigate to WhatsApp Manager -> Phone Numbers -> Migrate. Enter the phone number and source WABA ID.',
         estimatedTime: '10 min',
+        screenshot: 'https://assets.icebergplaybook.test/screenshots/whatsapp-manager-migrate.png#whatsapp-manager-migrate.png',
         successIndicator: 'Migration status pending OTP verification.'
       }
     ],
@@ -736,6 +740,23 @@ function readKnowledge(): Knowledge {
   const stored = localStorage.getItem(knowledgeKey);
   if (stored) {
     const data = JSON.parse(stored) as Knowledge;
+    const waG01 = data.guides.find(g => g.id === 'WA-G01');
+    if (waG01 && waG01.versionNumber === 1 && !waG01.video && !waG01.pdf && !waG01.steps[0]?.screenshot) {
+      const def = defaultGuides.find(g => g.id === 'WA-G01');
+      if (def) {
+        waG01.video = def.video;
+        waG01.pdf = def.pdf;
+        if (def.steps[0] && waG01.steps[0]) waG01.steps[0].screenshot = def.steps[0].screenshot;
+        if (def.steps[1] && waG01.steps[1]) waG01.steps[1].screenshot = def.steps[1].screenshot;
+        const v1 = data.guideVersions.find(v => v.guideId === 'WA-G01' && v.versionNumber === 1);
+        if (v1) {
+          v1.video = def.video;
+          v1.pdf = def.pdf;
+          if (def.steps[0] && v1.steps[0]) v1.steps[0].screenshot = def.steps[0].screenshot;
+          if (def.steps[1] && v1.steps[1]) v1.steps[1].screenshot = def.steps[1].screenshot;
+        }
+      }
+    }
     validateKnowledge(data);
     return data;
   }

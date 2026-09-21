@@ -5,7 +5,7 @@ export function guideChecklist(guide: Pick<GuideContent, 'beforeYouStart' | 'req
 }
 export function safeMediaUrl(url?: string): string | undefined {
   if (!url) return undefined;
-  try { const parsed = new URL(url); return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : undefined; } catch { return undefined; }
+  try { const parsed = new URL(url); return ['https:', 'http:', 'blob:'].includes(parsed.protocol) ? parsed.href : undefined; } catch { return undefined; }
 }
 export function videoEmbed(url: string): string | undefined {
   const safe = safeMediaUrl(url); if (!safe) return undefined;
