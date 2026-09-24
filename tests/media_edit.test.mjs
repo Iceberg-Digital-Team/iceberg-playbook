@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { importTs } from './helpers/transpile.mjs';
 
 const storage = new Map();
 globalThis.localStorage = {
@@ -10,10 +11,7 @@ globalThis.localStorage = {
   clear: () => storage.clear()
 };
 
-const dataJs = ts.transpileModule(readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 }
-}).outputText;
-const d = await import(`data:text/javascript;base64,${Buffer.from(dataJs).toString('base64')}`);
+const d = await importTs('src/data.ts', 'media_edit');
 
 const utilsJs = ts.transpileModule(readFileSync(new URL('../src/components/knowledge/mediaUtils.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 }
