@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { importTs } from './helpers/transpile.mjs';
 
 // Search runs against isolated in-memory storage, never the user's records.
 const storage = new Map();
@@ -15,7 +16,7 @@ async function loadTs(relativePath) {
     const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } }).outputText;
     return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 }
-const data = await loadTs('../src/data.ts');
+const data = await importTs('src/data.ts', 'search');
 const core = await loadTs('../src/search/searchCore.ts');
 
 const playbooks = [{ id: 'pb-a', name: 'Alphaplatform' }, { id: 'pb-b', name: 'Betaplatform' }];

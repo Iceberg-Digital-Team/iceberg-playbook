@@ -1,11 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import ts from 'typescript';
+import { importTs } from './helpers/transpile.mjs';
 const storage = new Map(); let fail = false;
 globalThis.localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k,v) => { if (fail) throw Error('quota'); storage.set(k,v); } };
-const js = ts.transpileModule(readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } }).outputText;
-const d = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const d = await importTs('src/data.ts', 'versions');
 test('two updates and restore retain exact snapshots, identity and current-only records', () => {
   const original = d.getPrimaryGuide('WA-001'); const count = d.getGuides().length;
   const first = d.getGuideVersion(original.id, original.currentVersionId);

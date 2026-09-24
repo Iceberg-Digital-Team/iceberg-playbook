@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import ts from 'typescript';
+import { importTs } from './helpers/transpile.mjs';
 
 // Test the real frontend data layer with isolated storage, never the user's records.
 const storage = new Map();
@@ -10,9 +9,7 @@ globalThis.localStorage = {
   getItem: key => storage.get(key) ?? null,
   setItem: (key, value) => { if (failWrites) throw Error('quota'); storage.set(key, value); },
 };
-const source = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
-const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } }).outputText;
-const data = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const data = await importTs('src/data.ts', 'relationships');
 const issueInput = { playbookId: 'whatsapp', title: 'QA problem', summary: 'Customer cannot complete signup.', status: 'Draft', difficulty: 'Medium', estimatedTime: '10 min', symptoms: ['Blank screen'], errorMessage: 'E-QA', context: 'During signup', affectedArea: 'Signup', informationToCollect: ['WABA ID'], attachments: [], internalNotes: 'Investigate' };
 const guideInput = { playbookId: 'whatsapp', issueId: '', title: 'QA solution', summary: 'Restore signup', status: 'Verified', difficulty: 'Medium', estimatedTime: '5 min', requirements: [], beforeYouStart: [], importantInformation: '', steps: [{ number: 1, title: 'Check setup', description: 'Review the setup.' }], commonProblems: [], faq: [], relatedItems: [], internalNotes: '', revisionHistory: [] };
 

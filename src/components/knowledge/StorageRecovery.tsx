@@ -68,6 +68,8 @@ export function StorageRecovery({
     ib_playbook_playbooks: 'Playbooks',
     ib_playbook_sops: 'SOPs',
     ib_playbook_knowledge_v2: 'Legacy Knowledge',
+    ib_playbook_issues: 'Legacy Issues',
+    ib_playbook_guides: 'Legacy Guides',
   };
 
   return (
