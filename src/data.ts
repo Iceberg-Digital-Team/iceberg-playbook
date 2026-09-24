@@ -615,16 +615,37 @@ const defaultSOPs: SOP[] = [
   }
 ];
 
+export class StorageCorruptedError extends Error {
+  key: string;
+  constructor(key: string, message?: string) {
+    super(message || `Storage corrupted for key: ${key}`);
+    this.name = 'StorageCorruptedError';
+    this.key = key;
+  }
+}
+
 // Load from local storage or set default
 export const loadData = <T>(key: string, defaults: T[]): T[] => {
+  const fullKey = `ib_playbook_${key}`;
+  let data: string | null;
   try {
-    const data = localStorage.getItem(`ib_playbook_${key}`);
-    if (!data) return defaults;
-    const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : defaults;
+    data = localStorage.getItem(fullKey);
   } catch {
+    throw new StorageCorruptedError(fullKey, 'Storage is inaccessible.');
+  }
+  if (data === null) {
     return defaults;
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    throw new StorageCorruptedError(fullKey, `Failed to parse ${fullKey} as JSON.`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new StorageCorruptedError(fullKey, `Expected an array in ${fullKey}.`);
+  }
+  return parsed as T[];
 };
 
 export const saveData = <T>(key: string, data: T[]) => {
@@ -654,10 +675,11 @@ export interface StorageKeyStatus {
 }
 
 export interface StorageIntegrityResult {
-  status: 'healthy' | 'corrupted';
+  status: 'healthy' | 'corrupted' | 'unavailable';
   affectedKeys: string[];
   details: Record<string, StorageKeyStatus>;
   canReset: boolean;
+  manifestError?: string;
 }
 
 const BACKUP_MANIFEST_KEY = 'ib_playbook_corrupt_manifest';
@@ -678,23 +700,28 @@ function getNextBackupKey(cleanKey: string): string {
 
 interface BackupManifestRecord {
   backupKey: string;
-  rawValue: string;
 }
 
-function getBackupManifest(): Record<string, BackupManifestRecord> {
+function getBackupManifest(): { manifest: Record<string, BackupManifestRecord>; error?: string } {
   try {
     const raw = localStorage.getItem(BACKUP_MANIFEST_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+    if (!raw) return { manifest: {} };
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { manifest: parsed as Record<string, BackupManifestRecord> };
+    }
+    return { manifest: {}, error: 'Corrupt manifest format' };
+  } catch (e) {
+    return { manifest: {}, error: e instanceof Error ? e.message : 'Corrupt manifest' };
   }
 }
 
-function saveBackupManifest(manifest: Record<string, BackupManifestRecord>) {
+function saveBackupManifest(manifest: Record<string, BackupManifestRecord>): string | undefined {
   try {
     localStorage.setItem(BACKUP_MANIFEST_KEY, JSON.stringify(manifest));
-  } catch {
-    // If manifest cannot be saved due to quota, individual backups remain in their keys
+    return undefined;
+  } catch (e) {
+    return e instanceof Error ? e.message : 'Failed to save backup manifest';
   }
 }
 
@@ -802,16 +829,22 @@ function writeKnowledge(data: Knowledge) {
   catch { throw new Error('Could not save. Browser storage may be full or unavailable. Your form has been kept open.'); }
 }
 function readKnowledge(): Knowledge {
-  const stored = localStorage.getItem(knowledgeKey);
-  if (stored) {
+  let stored: string | null;
+  try {
+    stored = localStorage.getItem(knowledgeKey);
+  } catch {
+    throw new StorageCorruptedError(knowledgeKey, 'Storage is inaccessible.');
+  }
+
+  if (stored !== null) {
     let data: Knowledge;
     try {
       data = JSON.parse(stored) as Knowledge;
-      if (!data || typeof data !== 'object' || data.version !== 3 || !Array.isArray(data.issues) || !Array.isArray(data.guides) || !Array.isArray(data.guideVersions)) {
-        return { version: 3, issues: [], guides: [], guideVersions: [] };
-      }
     } catch {
-      return { version: 3, issues: [], guides: [], guideVersions: [] };
+      throw new StorageCorruptedError(knowledgeKey, 'Knowledge envelope contains malformed JSON.');
+    }
+    if (!data || typeof data !== 'object' || data.version !== 3 || !Array.isArray(data.issues) || !Array.isArray(data.guides) || !Array.isArray(data.guideVersions)) {
+      throw new StorageCorruptedError(knowledgeKey, 'Knowledge envelope schema is invalid.');
     }
     const waG01 = data.guides.find(g => g.id === 'WA-G01');
     if (waG01 && waG01.versionNumber === 1 && !waG01.video && !waG01.pdf && !waG01.steps[0]?.screenshot) {
@@ -832,31 +865,70 @@ function readKnowledge(): Knowledge {
     }
     try {
       validateKnowledge(data);
-    } catch {
-      return { version: 3, issues: [], guides: [], guideVersions: [] };
+    } catch (e) {
+      throw new StorageCorruptedError(knowledgeKey, e instanceof Error ? e.message : 'Knowledge validation failed.');
     }
     return data;
   }
-  const previous = localStorage.getItem('ib_playbook_knowledge_v2');
-  const legacy: LegacyKnowledge = previous ? JSON.parse(previous) : migrateKnowledge(loadData('issues', defaultIssues), loadData('guides', defaultGuides), loadData('playbooks', defaultPlaybooks));
+
+  let previous: string | null;
+  try {
+    previous = localStorage.getItem('ib_playbook_knowledge_v2');
+  } catch {
+    throw new StorageCorruptedError('ib_playbook_knowledge_v2', 'Storage is inaccessible.');
+  }
+
+  let legacy: LegacyKnowledge;
+  if (previous !== null) {
+    try {
+      legacy = JSON.parse(previous);
+      if (!legacy || typeof legacy !== 'object' || legacy.version !== 2 || !Array.isArray(legacy.issues) || !Array.isArray(legacy.guides)) {
+        throw new StorageCorruptedError('ib_playbook_knowledge_v2', 'Invalid legacy knowledge format.');
+      }
+    } catch (e) {
+      if (e instanceof StorageCorruptedError) throw e;
+      throw new StorageCorruptedError('ib_playbook_knowledge_v2', 'Legacy knowledge contains malformed JSON.');
+    }
+  } else {
+    legacy = migrateKnowledge(loadData('issues', defaultIssues), loadData('guides', defaultGuides), loadData('playbooks', defaultPlaybooks));
+  }
+
   const migrated: Knowledge = { version: 3, issues: legacy.issues, guides: legacy.guides.map(initialIdentity), guideVersions: legacy.guides.map(g => initialVersion(g, true)) };
   writeKnowledge(migrated);
   return migrated;
 }
 
 export function checkStorageIntegrity(): StorageIntegrityResult {
+  try {
+    localStorage.getItem(knowledgeKey);
+  } catch {
+    return {
+      status: 'unavailable',
+      affectedKeys: [],
+      details: {},
+      canReset: false,
+    };
+  }
+
   const affectedKeys: string[] = [];
   const details: Record<string, StorageKeyStatus> = {};
   let canReset = true;
 
-  const manifest = getBackupManifest();
+  const { manifest, error: manifestLoadError } = getBackupManifest();
+  let manifestError = manifestLoadError;
   let manifestChanged = false;
 
   const checkKey = (key: string, validateFn: (raw: string) => void) => {
-    const raw = localStorage.getItem(key);
+    let raw: string | null;
+    try {
+      raw = localStorage.getItem(key);
+    } catch {
+      return;
+    }
     if (raw === null) {
       return;
     }
+
     let isCorrupted = false;
     let errorMessage: string | undefined;
     try {
@@ -872,16 +944,25 @@ export function checkStorageIntegrity(): StorageIntegrityResult {
       let backupKey: string | undefined;
       let backupFailed = false;
 
-      if (existing && existing.rawValue === raw && localStorage.getItem(existing.backupKey) === raw) {
-        backupKey = existing.backupKey;
-      } else {
+      if (existing?.backupKey) {
+        try {
+          const existingVal = localStorage.getItem(existing.backupKey);
+          if (existingVal === raw) {
+            backupKey = existing.backupKey;
+          }
+        } catch {
+          // ignore error reading backup key
+        }
+      }
+
+      if (!backupKey) {
         const candidate = getNextBackupKey(cleanStorageKey(key));
         try {
           localStorage.setItem(candidate, raw);
           const readBack = localStorage.getItem(candidate);
           if (readBack === raw) {
             backupKey = candidate;
-            manifest[key] = { backupKey: candidate, rawValue: raw };
+            manifest[key] = { backupKey: candidate };
             manifestChanged = true;
           } else {
             backupFailed = true;
@@ -905,7 +986,6 @@ export function checkStorageIntegrity(): StorageIntegrityResult {
     }
   };
 
-  // 1. Knowledge v3
   checkKey(knowledgeKey, (raw) => {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -920,7 +1000,6 @@ export function checkStorageIntegrity(): StorageIntegrityResult {
     validateKnowledge(parsed as Knowledge);
   });
 
-  // If knowledgeKey was absent, check legacy v2
   if (localStorage.getItem(knowledgeKey) === null && localStorage.getItem('ib_playbook_knowledge_v2') !== null) {
     checkKey('ib_playbook_knowledge_v2', (raw) => {
       const parsed = JSON.parse(raw);
@@ -930,7 +1009,6 @@ export function checkStorageIntegrity(): StorageIntegrityResult {
     });
   }
 
-  // 2. Playbooks
   checkKey('ib_playbook_playbooks', (raw) => {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
@@ -948,7 +1026,6 @@ export function checkStorageIntegrity(): StorageIntegrityResult {
     }
   });
 
-  // 3. SOPs
   checkKey('ib_playbook_sops', (raw) => {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
@@ -967,7 +1044,10 @@ export function checkStorageIntegrity(): StorageIntegrityResult {
   });
 
   if (manifestChanged) {
-    saveBackupManifest(manifest);
+    const saveErr = saveBackupManifest(manifest);
+    if (saveErr) {
+      manifestError = saveErr;
+    }
   }
 
   return {
@@ -975,6 +1055,7 @@ export function checkStorageIntegrity(): StorageIntegrityResult {
     affectedKeys,
     details,
     canReset: affectedKeys.length === 0 || canReset,
+    ...(manifestError ? { manifestError } : {}),
   };
 }
 
@@ -998,17 +1079,21 @@ export function getCorruptedBackupData(): Record<string, string> {
   return result;
 }
 
-export function resetCorruptedStorage(): StorageIntegrityResult {
+export function resetCorruptedStorage(options?: { withoutBackup?: boolean }): StorageIntegrityResult {
   const integrity = checkStorageIntegrity();
   if (integrity.status === 'healthy') {
     return integrity;
   }
-  if (!integrity.canReset) {
+  if (!integrity.canReset && !options?.withoutBackup) {
     throw new Error('Cannot reset storage: backup could not be verified. Please download your data before resetting.');
   }
 
-  const manifest = getBackupManifest();
-  for (const key of integrity.affectedKeys) {
+  const { manifest } = getBackupManifest();
+  const keysToReset = options?.withoutBackup
+    ? integrity.affectedKeys.filter(k => integrity.details[k]?.backupFailed)
+    : integrity.affectedKeys;
+
+  for (const key of keysToReset) {
     if (key === knowledgeKey) {
       const emptyKnowledge: Knowledge = { version: 3, issues: [], guides: [], guideVersions: [] };
       localStorage.setItem(knowledgeKey, JSON.stringify(emptyKnowledge));

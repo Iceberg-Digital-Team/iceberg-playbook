@@ -11,6 +11,8 @@ export function StorageRecovery({
 }) {
   const [integrity, setIntegrity] = useState(() => initialIntegrity ?? checkStorageIntegrity());
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [confirmingForceReset, setConfirmingForceReset] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
   const [actionError, setActionError] = useState('');
 
   const handleDownload = () => {
@@ -24,7 +26,8 @@ export function StorageRecovery({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setDownloaded(true);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
       setActionError('Could not create backup download.');
     }
@@ -37,6 +40,21 @@ export function StorageRecovery({
       const updated = checkStorageIntegrity();
       setIntegrity(updated);
       setConfirmingReset(false);
+      if (updated.status === 'healthy') {
+        onRecovered?.();
+      }
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not reset storage.');
+    }
+  };
+
+  const handleForceReset = () => {
+    setActionError('');
+    try {
+      resetCorruptedStorage({ withoutBackup: true });
+      const updated = checkStorageIntegrity();
+      setIntegrity(updated);
+      setConfirmingForceReset(false);
       if (updated.status === 'healthy') {
         onRecovered?.();
       }
@@ -62,19 +80,30 @@ export function StorageRecovery({
             <button type="button" className="btn-secondary" onClick={handleDownload}>
               Download Backup
             </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={!integrity.canReset}
-              onClick={() => setConfirmingReset(true)}
-            >
-              Start Fresh
-            </button>
+            {integrity.canReset ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setConfirmingReset(true)}
+              >
+                Start Fresh
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={!downloaded}
+                onClick={() => setConfirmingForceReset(true)}
+              >
+                Start Fresh (Download Required)
+              </button>
+            )}
           </div>
         }
       >
-        Corrupted or inconsistent data was detected in browser storage. To protect your work from permanent loss,
-        unreadable data has been preserved in a backup key. You can download the backup file and start fresh with a clean workspace.
+        {integrity.canReset
+          ? 'Corrupted or inconsistent data was detected in browser storage. To protect your work from permanent loss, unreadable data has been preserved in a backup key. You can download the backup file and start fresh with a clean workspace.'
+          : 'Corrupted or inconsistent data was detected in browser storage. Automated backup to browser storage was not possible because storage quota was reached. Please download your data file before resetting.'}
       </StateMessage>
 
       {integrity.affectedKeys.length > 0 && (
@@ -89,7 +118,7 @@ export function StorageRecovery({
                     — backed up to <code>{integrity.details[k]?.backupKey}</code>
                   </span>
                 ) : integrity.details[k]?.backupFailed ? (
-                  <span style={{ color: 'var(--error-text, #c00)', marginLeft: 8 }}>
+                  <span className="knowledge-error" style={{ marginLeft: 8, display: 'inline' }}>
                     — backup failed (storage quota reached; preserved in original key)
                   </span>
                 ) : null}
@@ -99,9 +128,15 @@ export function StorageRecovery({
         </section>
       )}
 
-      {!integrity.canReset && (
+      {!integrity.canReset && !downloaded && (
         <p className="knowledge-error" role="alert" style={{ marginTop: 16 }}>
-          Automated backup could not be completed because browser storage is full. Please download your data first before resetting.
+          Automated backup could not be completed because browser storage is full. Please download your backup file first before resetting.
+        </p>
+      )}
+
+      {!integrity.canReset && downloaded && (
+        <p role="status" className="helper-text" style={{ marginTop: 16 }}>
+          Backup file downloaded. You can now proceed to start fresh.
         </p>
       )}
 
@@ -132,6 +167,36 @@ export function StorageRecovery({
             </button>
             <button type="button" className="btn-primary" onClick={handleReset}>
               Confirm & Start Fresh
+            </button>
+          </div>
+        </dialog>
+      )}
+
+      {confirmingForceReset && (
+        <dialog
+          open
+          className="guide-restore-dialog"
+          aria-labelledby="force-reset-title"
+          onCancel={e => {
+            e.preventDefault();
+            setConfirmingForceReset(false);
+          }}
+        >
+          <h2 id="force-reset-title">Reset unbacked data and start fresh?</h2>
+          <p>
+            Because browser storage reached capacity, an automatic backup could not be saved inside your browser storage.
+            You have downloaded the backup file to your computer.
+          </p>
+          <p>
+            Proceeding will erase the unreadable data from your browser storage and reset with clean defaults.
+            Please ensure you have saved your downloaded backup file.
+          </p>
+          <div className="knowledge-actions">
+            <button type="button" autoFocus className="btn-secondary" onClick={() => setConfirmingForceReset(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={handleForceReset}>
+              I Have Saved My Download — Start Fresh
             </button>
           </div>
         </dialog>
