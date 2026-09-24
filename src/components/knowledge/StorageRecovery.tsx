@@ -190,7 +190,7 @@ export function StorageRecovery({
             You have downloaded the backup file to your computer.
           </p>
           <p>
-            Proceeding will erase the unreadable data from your browser storage and reset with clean defaults.
+            Proceeding will replace only the unreadable data with an empty, valid entry. Your other saved data is kept.
             Please ensure you have saved your downloaded backup file.
           </p>
           <div className="knowledge-actions">

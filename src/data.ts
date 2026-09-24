@@ -284,21 +284,97 @@ function saveBackupManifest(manifest: Record<string, BackupManifestRecord>): str
 interface LegacyKnowledge { version: 2; issues: Issue[]; guides: Guide[]; }
 interface Knowledge { version: 3; issues: Issue[]; guides: VersionedGuide[]; guideVersions: GuideVersion[]; }
 const knowledgeKey = 'ib_playbook_knowledge_v3';
+const legacyKnowledgeKey = 'ib_playbook_knowledge_v2';
 // Pre-v2 storage kept Issues and Guides in separate lists.
 const legacyIssuesKey = 'ib_playbook_issues';
 const legacyGuidesKey = 'ib_playbook_guides';
+const playbooksKey = 'ib_playbook_playbooks';
+const sopsKey = 'ib_playbook_sops';
+// Present once this browser no longer treats a missing Playbook or SOP list as "show the samples".
+const explicitDefaultsKey = 'ib_playbook_explicit_defaults';
+
+function writeStorageKey(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    throw new Error('Could not save. Browser storage may be full or unavailable.');
+  }
+}
+
+// Sample content used to be the implicit value of a missing Playbook or SOP list. An install
+// that already holds Knowledge gets those samples written once, so nothing it showed disappears.
+// A new, empty install writes nothing until its first save, which records the marker first so
+// its own missing lists are never mistaken for an old install later.
+function settleImplicitDefaults(beforeWrite: boolean) {
+  if (hasStoredKey(explicitDefaultsKey)) return;
+  const existingInstall = [knowledgeKey, legacyKnowledgeKey, legacyIssuesKey, legacyGuidesKey].some(hasStoredKey);
+  if (!existingInstall && !beforeWrite) return;
+  if (existingInstall) {
+    if (!hasStoredKey(playbooksKey)) writeStorageKey(playbooksKey, JSON.stringify(samplePlaybooks));
+    if (!hasStoredKey(sopsKey)) writeStorageKey(sopsKey, JSON.stringify(sampleSOPs));
+  }
+  writeStorageKey(explicitDefaultsKey, 'true');
+}
+
 export const getPlaybooks = (): Playbook[] => {
   const knowledge = readKnowledge();
   const sops = getSOPs();
-  return loadData('playbooks', samplePlaybooks).map(p => ({ ...p,
+  settleImplicitDefaults(false);
+  return loadData<Playbook>('playbooks', []).map(p => ({ ...p,
     issueCount: knowledge.issues.filter(i => i.playbookId === p.id).length,
     guideCount: knowledge.guides.filter(g => g.playbookId === p.id).length,
     sopCount: sops.filter(s => s.playbookId === p.id).length,
   }));
 };
-export const getSOPs = (): SOP[] => loadData('sops', sampleSOPs);
-export const savePlaybooks = (data: Playbook[]) => saveData('playbooks', data);
-export const saveSOPs = (data: SOP[]) => saveData('sops', data);
+export const getSOPs = (): SOP[] => {
+  settleImplicitDefaults(false);
+  return loadData<SOP>('sops', []);
+};
+export const savePlaybooks = (data: Playbook[]) => {
+  settleImplicitDefaults(true);
+  saveData('playbooks', data);
+};
+export const saveSOPs = (data: SOP[]) => {
+  settleImplicitDefaults(true);
+  saveData('sops', data);
+};
+
+export function hasAnyContent(): boolean {
+  const knowledge = readKnowledge();
+  return knowledge.issues.length > 0 || knowledge.guides.length > 0 || knowledge.guideVersions.length > 0
+    || getSOPs().length > 0 || getPlaybooks().length > 0;
+}
+
+// Sample data is only ever written into an empty workspace, and all-or-nothing.
+export function loadSampleData(): void {
+  if (hasAnyContent()) throw new Error('Sample data can only be loaded when there is no content.');
+  const sample: Knowledge = structuredClone({ version: 3, issues: sampleIssues, guides: sampleGuides, guideVersions: sampleGuideVersions });
+  validateKnowledge(sample);
+  const writes: [string, string][] = [
+    [explicitDefaultsKey, 'true'],
+    [knowledgeKey, JSON.stringify(sample)],
+    [playbooksKey, JSON.stringify(samplePlaybooks)],
+    [sopsKey, JSON.stringify(sampleSOPs)],
+  ];
+  const previous = writes.map(([key]) => [key, localStorage.getItem(key)] as const);
+  let written = 0;
+  try {
+    for (const [key, value] of writes) {
+      localStorage.setItem(key, value);
+      written++;
+    }
+  } catch {
+    try {
+      for (const [key, value] of previous.slice(0, written)) {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      }
+    } catch {
+      throw new Error('Could not load sample data, and undoing the partial load also failed. Browser storage may now be inconsistent; reload the page to check it.');
+    }
+    throw new Error('Could not load sample data. Browser storage may be full or unavailable. Nothing was changed.');
+  }
+}
 
 function nextCode(ids: string[], prefix: string, digits: number) {
   const numbers = ids.filter(id => id.startsWith(prefix)).map(id => Number(id.slice(prefix.length))).filter(Number.isFinite);
@@ -325,7 +401,7 @@ export function migrateKnowledge(oldIssues: LegacyIssue[], oldGuides: Omit<Guide
     const id = nextCode([...reservedIds, ...guides.map(g => g.id)], prefix, 2);
     guides.push({
       id, issueId: old.id, playbookId: old.playbookId,
-      title: old.id === 'WA-001' ? 'How to Resolve a Registered WhatsApp Number' : `How to resolve: ${old.title}`,
+      title: `How to resolve: ${old.title}`,
       summary: `Follow the documented solution for ${old.title}.`, status: old.status,
       difficulty: old.difficulty, estimatedTime: old.estimatedTime, author: old.author, updatedAt: old.updatedAt,
       requirements: old.requirements || [], beforeYouStart: old.beforeYouStart || [], importantInformation: old.importantInformation || '',
@@ -333,23 +409,16 @@ export function migrateKnowledge(oldIssues: LegacyIssue[], oldGuides: Omit<Guide
       relatedItems: old.relatedItems || [], internalNotes: old.internalNotes || '', revisionHistory: old.revisionHistory || [],
     });
   }
-  const seedProblems: Record<string, { id: string; title: string; summary: string }> = {
-    'WA-G01': { id: 'WA-004', title: 'WhatsApp BSP Migration Required', summary: 'The customer’s WhatsApp Business number is hosted with another BSP and needs to move to Iceberg Digital.' },
-    'WA-G02': { id: 'WA-005', title: 'New WhatsApp Number Not Configured', summary: 'A new customer phone number has not yet been configured for the WhatsApp Business API.' },
-    'LIFE-G01': { id: 'LIFE-003', title: 'Property Matching Issue', summary: 'Property listings fail to match with leads in the Lifesycle integration.' },
-  };
   for (const old of oldGuides) {
     // Retain old Guide IDs so bookmarks and SOP references continue to work.
     let issue = issues.find(i => old.relatedItems?.includes(i.id) && i.playbookId === old.playbookId && !guides.some(g => g.issueId === i.id));
     if (!issue) {
-      const seed = seedProblems[old.id];
       const prefix = (playbooks.find(p => p.id === old.playbookId)?.code || 'ISS') + '-';
-      const id = seed && !issues.some(i => i.id === seed.id) ? seed.id : nextCode(issues.map(i => i.id), prefix, 3);
       issue = {
-        id, playbookId: old.playbookId, title: seed?.title || `Problem documented by: ${old.title}`,
-        summary: seed?.summary || old.summary, symptoms: [], errorMessage: '', context: '', affectedArea: '',
-        informationToCollect: [], attachments: [], internalNotes: seed ? '' : 'Imported from an existing Guide. Review and complete the problem description.',
-        status: seed ? old.status : 'Draft', difficulty: old.difficulty, estimatedTime: '',
+        id: nextCode(issues.map(i => i.id), prefix, 3), playbookId: old.playbookId, title: `Problem documented by: ${old.title}`,
+        summary: old.summary, symptoms: [], errorMessage: '', context: '', affectedArea: '',
+        informationToCollect: [], attachments: [], internalNotes: 'Imported from an existing Guide. Review and complete the problem description.',
+        status: 'Draft', difficulty: old.difficulty, estimatedTime: '',
         author: old.author, createdAt: old.updatedAt, updatedAt: old.updatedAt,
       };
       issues.push(issue);
@@ -357,6 +426,38 @@ export function migrateKnowledge(oldIssues: LegacyIssue[], oldGuides: Omit<Guide
     guides.push({ ...old, issueId: issue.id, playbookId: issue.playbookId });
   }
   return { version: 2, issues, guides };
+}
+
+// Reads v2 or pre-v2 storage as a v3 envelope. Returns null when no legacy data is stored.
+function readLegacyKnowledge(): Knowledge | null {
+  let previous: string | null;
+  try {
+    previous = localStorage.getItem(legacyKnowledgeKey);
+  } catch {
+    throw new StorageCorruptedError(legacyKnowledgeKey, 'Storage is inaccessible.');
+  }
+
+  let legacy: LegacyKnowledge;
+  if (previous !== null) {
+    try {
+      legacy = JSON.parse(previous);
+      if (!legacy || typeof legacy !== 'object' || legacy.version !== 2 || !Array.isArray(legacy.issues) || !Array.isArray(legacy.guides)) {
+        throw new StorageCorruptedError(legacyKnowledgeKey, 'Invalid legacy knowledge format.');
+      }
+    } catch (e) {
+      if (e instanceof StorageCorruptedError) throw e;
+      throw new StorageCorruptedError(legacyKnowledgeKey, 'Legacy knowledge contains malformed JSON.');
+    }
+  } else if (hasStoredKey(legacyIssuesKey) || hasStoredKey(legacyGuidesKey)) {
+    // A missing legacy list counts as empty; sample content is never merged into stored records.
+    // samplePlaybooks is only read here for the Playbook code prefix of new IDs (WA-G02, not
+    // GD-G01), as pre-v2 installs without a stored Playbook list saw it. Nothing is copied from it.
+    legacy = migrateKnowledge(loadData<LegacyIssue>('issues', []), loadData<Omit<Guide, 'issueId'>>('guides', []), loadData('playbooks', samplePlaybooks));
+  } else {
+    return null;
+  }
+
+  return { version: 3, issues: legacy.issues, guides: legacy.guides.map(initialIdentity), guideVersions: legacy.guides.map(g => initialVersion(g, true)) };
 }
 
 export function validateKnowledge(data: Knowledge) {
@@ -382,6 +483,7 @@ export function validateKnowledge(data: Knowledge) {
 }
 function writeKnowledge(data: Knowledge) {
   validateKnowledge(data);
+  settleImplicitDefaults(true);
   try { localStorage.setItem(knowledgeKey, JSON.stringify(data)); }
   catch { throw new Error('Could not save. Browser storage may be full or unavailable. Your form has been kept open.'); }
 }
@@ -410,23 +512,6 @@ function readKnowledge(): Knowledge {
     if (!data || typeof data !== 'object' || data.version !== 3 || !Array.isArray(data.issues) || !Array.isArray(data.guides) || !Array.isArray(data.guideVersions)) {
       throw new StorageCorruptedError(knowledgeKey, 'Knowledge envelope schema is invalid.');
     }
-    const waG01 = data.guides.find(g => g.id === 'WA-G01');
-    if (waG01 && waG01.versionNumber === 1 && !waG01.video && !waG01.pdf && !waG01.steps[0]?.screenshot) {
-      const def = sampleGuides.find(g => g.id === 'WA-G01');
-      if (def) {
-        waG01.video = def.video;
-        waG01.pdf = def.pdf;
-        if (def.steps[0] && waG01.steps[0]) waG01.steps[0].screenshot = def.steps[0].screenshot;
-        if (def.steps[1] && waG01.steps[1]) waG01.steps[1].screenshot = def.steps[1].screenshot;
-        const v1 = data.guideVersions.find(v => v.guideId === 'WA-G01' && v.versionNumber === 1);
-        if (v1) {
-          v1.video = def.video;
-          v1.pdf = def.pdf;
-          if (def.steps[0] && v1.steps[0]) v1.steps[0].screenshot = def.steps[0].screenshot;
-          if (def.steps[1] && v1.steps[1]) v1.steps[1].screenshot = def.steps[1].screenshot;
-        }
-      }
-    }
     try {
       validateKnowledge(data);
     } catch (e) {
@@ -435,36 +520,13 @@ function readKnowledge(): Knowledge {
     return data;
   }
 
-  let previous: string | null;
-  try {
-    previous = localStorage.getItem('ib_playbook_knowledge_v2');
-  } catch {
-    throw new StorageCorruptedError('ib_playbook_knowledge_v2', 'Storage is inaccessible.');
+  const migrated = readLegacyKnowledge();
+  if (migrated) {
+    writeKnowledge(migrated);
+    return migrated;
   }
-
-  let legacy: LegacyKnowledge;
-  if (previous !== null) {
-    try {
-      legacy = JSON.parse(previous);
-      if (!legacy || typeof legacy !== 'object' || legacy.version !== 2 || !Array.isArray(legacy.issues) || !Array.isArray(legacy.guides)) {
-        throw new StorageCorruptedError('ib_playbook_knowledge_v2', 'Invalid legacy knowledge format.');
-      }
-    } catch (e) {
-      if (e instanceof StorageCorruptedError) throw e;
-      throw new StorageCorruptedError('ib_playbook_knowledge_v2', 'Legacy knowledge contains malformed JSON.');
-    }
-  } else if (hasStoredKey(legacyIssuesKey) || hasStoredKey(legacyGuidesKey)) {
-    // A missing legacy list counts as empty; sample content is never merged into stored records.
-    legacy = migrateKnowledge(loadData<LegacyIssue>('issues', []), loadData<Omit<Guide, 'issueId'>>('guides', []), loadData('playbooks', samplePlaybooks));
-  } else {
-    const sample: Knowledge = structuredClone({ version: 3, issues: sampleIssues, guides: sampleGuides, guideVersions: sampleGuideVersions });
-    writeKnowledge(sample);
-    return sample;
-  }
-
-  const migrated: Knowledge = { version: 3, issues: legacy.issues, guides: legacy.guides.map(initialIdentity), guideVersions: legacy.guides.map(g => initialVersion(g, true)) };
-  writeKnowledge(migrated);
-  return migrated;
+  // An empty workspace stays empty and unwritten until the user saves something.
+  return { version: 3, issues: [], guides: [], guideVersions: [] };
 }
 
 export function checkStorageIntegrity(): StorageIntegrityResult {

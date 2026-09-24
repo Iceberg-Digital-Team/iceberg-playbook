@@ -15,6 +15,7 @@ const guideInput = { playbookId: 'whatsapp', issueId: '', title: 'QA solution', 
 
 test('migration preserves all legacy solution content and old Guide links', () => {
   storage.clear();
+  data.loadSampleData();
   const issues = data.getIssues(); const guides = data.getGuides();
   assert.equal(new Set(guides.map(g => g.issueId)).size, guides.length);
   for (const g of guides) assert.equal(issues.find(i => i.id === g.issueId)?.playbookId, g.playbookId);

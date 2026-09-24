@@ -12,6 +12,7 @@ globalThis.localStorage = {
 };
 
 const d = await importTs('src/data.ts', 'media_edit');
+d.loadSampleData();
 
 const utilsJs = ts.transpileModule(readFileSync(new URL('../src/components/knowledge/mediaUtils.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 }

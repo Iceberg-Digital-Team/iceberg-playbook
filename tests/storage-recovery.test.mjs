@@ -63,8 +63,8 @@ const playbookInput = {
 };
 
 function seedMigratedKnowledge() {
-  data.getIssues();
-  assert.ok(raw(KNOWLEDGE), 'precondition: reading empty storage must produce a v3 envelope');
+  data.loadSampleData();
+  assert.ok(raw(KNOWLEDGE), 'precondition: loading sample data must produce a v3 envelope');
   const playbookId = data.getPlaybooks()[0]?.id;
   assert.ok(playbookId, 'precondition: at least one playbook must be available');
   return playbookId;
