@@ -230,30 +230,6 @@ export function matchTroubleshootingIssue(
     return null;
   }
 
-  let manualTargetId: string | null = null;
-  if (playbookId === 'whatsapp' && category === 'Phone Number') {
-    if (rawSymptom === 'Number already registered') {
-      manualTargetId = 'WA-001';
-    } else if (rawSymptom === 'OTP not received') {
-      manualTargetId = 'WA-002';
-    }
-  } else if (playbookId === 'whatsapp' && category === 'Embedded Signup') {
-    if (rawSymptom === 'Popup closes abruptly' || rawSymptom === 'Blank window displays') {
-      manualTargetId = 'WA-003';
-    }
-  } else if (playbookId === 'meta-business' && category === 'Business Verification') {
-    if (rawSymptom === 'Document rejected') {
-      manualTargetId = 'META-006';
-    }
-  }
-
-  if (manualTargetId) {
-    const manualIssue = playbookIssues.find(i => i.id === manualTargetId);
-    if (manualIssue) {
-      return manualIssue;
-    }
-  }
-
   const rawTokens = tokenize(rawSymptom);
   const meaningfulTokens = rawTokens.filter(
     t => t.length > 2 && !TROUBLESHOOTING_STOPWORDS.has(t)

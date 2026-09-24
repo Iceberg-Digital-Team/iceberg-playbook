@@ -17,6 +17,8 @@ async function loadTs(relativePath) {
     return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 }
 const data = await importTs('src/data.ts', 'search');
+// Tests on real content start from empty storage and load the sample data explicitly.
+const loadSample = () => { storage.clear(); data.loadSampleData(); };
 const core = await loadTs('../src/search/searchCore.ts');
 
 const playbooks = [{ id: 'pb-a', name: 'Alphaplatform' }, { id: 'pb-b', name: 'Betaplatform' }];
@@ -53,7 +55,7 @@ test('exact Guide and SOP codes rank first above records that mention them', () 
     assert.deepEqual(ids('SOP-001', set), ['SOP-001', 'SOP-002']);
     assert.deepEqual(ids('sop-001?', set), ['SOP-001', 'SOP-002']);
 
-    storage.clear();
+    loadSample();
     assert.equal(core.searchKnowledge('WA-G02', realData(), {})[0].id, 'WA-G02');
     const sopId = data.getSOPs()[0].id;
     assert.equal(core.searchKnowledge(sopId, realData(), {})[0].id, sopId);
@@ -130,7 +132,7 @@ test('errorMessage match ranks above summary match', () => {
 });
 
 test('real data: Issue is found by a term that exists only in its symptoms or errorMessage', () => {
-    storage.clear();
+    loadSample();
     const created = data.addIssue({ ...issueInput, symptoms: ['Quxlantic spinner freeze'], errorMessage: 'ERR_ZORBLAX_42' });
     const found = q => core.searchKnowledge(q, realData(), {}).map(x => x.id);
     assert.deepEqual(found('quxlantic'), [created.id]);
@@ -139,7 +141,7 @@ test('real data: Issue is found by a term that exists only in its symptoms or er
 });
 
 test('real data (R-02): Issue code returns the Issue first and its Guide too', () => {
-    storage.clear();
+    loadSample();
     const guideId = data.getPrimaryGuide('WA-001').id;
     for (const q of ['WA-001', 'wa-001']) {
         const found = core.searchKnowledge(q, realData(), {}).map(x => x.id);
@@ -199,7 +201,7 @@ test('no match returns empty; orphan records never appear even when their text m
 });
 
 test('real data (R-07): Guide results are unique and come only from current getGuides() records', () => {
-    storage.clear();
+    loadSample();
     const d = realData();
     const results = core.searchKnowledge('', d, { type: 'Guides' });
     const resultIds = results.map(x => x.id);
@@ -217,8 +219,8 @@ const genericSymptoms = ['Integration fails to trigger', 'Sync lag or delay', 'C
 // Independent of the implementation's stopword list: any returned Issue must contain every long word of the symptom.
 const longWords = s => s.toLowerCase().split(/\s+/).filter(w => w.length > 3);
 
-test('troubleshooting: manual rules return their Issue for the exact Playbook, category and symptom', () => {
-    storage.clear();
+test('troubleshooting real data: each listed symptom reaches its sample Issue through symptom matching', () => {
+    loadSample();
     const issues = data.getIssues();
     const cases = [
         ['whatsapp', 'Phone Number', 'Number already registered', 'WA-001'],
@@ -236,7 +238,7 @@ test('troubleshooting (1.3): Zoom/Meetings generic symptoms return null, never Z
     const zoom = [issue({ id: 'ZOOM-002', playbookId: 'zoom', title: 'Meeting link expired', symptoms: ['Meeting link expired'] })];
     for (const s of genericSymptoms) assert.equal(tsMatch('zoom', 'Meetings', s, zoom), null, `synthetic / ${s}`);
 
-    storage.clear();
+    loadSample();
     const issues = data.getIssues();
     assert.ok(issues.some(i => i.id === 'ZOOM-002' && i.playbookId === 'zoom'), 'seed ZOOM-002 must exist for this test to mean anything');
     for (const s of genericSymptoms) assert.equal(tsMatch('zoom', 'Meetings', s, issues), null, `real / ${s}`);
@@ -250,7 +252,7 @@ test('troubleshooting (1.3): Zoom/Meetings falls through to normal matching when
     assert.equal(tsMatch('zoom', 'Meetings', 'Meeting not starting', zoom), 'ZOOM-009');
 });
 
-test('troubleshooting: missing or cross-Playbook manual target does not throw and falls through to symptom matching', () => {
+test('troubleshooting: an Issue code from another Playbook or no matching Issue returns null; a same-Playbook symptom match is returned', () => {
     const unrelated = [issue({ id: 'WA-009', playbookId: 'whatsapp', title: 'Unrelated webhook' })];
     assert.doesNotThrow(() => tsMatch('whatsapp', 'Phone Number', 'Number already registered', unrelated));
     assert.equal(tsMatch('whatsapp', 'Phone Number', 'Number already registered', unrelated), null);
@@ -287,7 +289,7 @@ test('troubleshooting (R-01): unrelated symptom never falls back to the first Is
 });
 
 test('troubleshooting (R-01) real data: Lifesycle/Webhooks never gives LIFE-003 and WhatsApp/Templates never gives WA-001', () => {
-    storage.clear();
+    loadSample();
     const issues = data.getIssues();
     assert.ok(issues.some(i => i.id === 'LIFE-003' && i.playbookId === 'lifesycle'), 'seed LIFE-003 must exist for this test to mean anything');
     for (const [pb, cat, forbidden] of [['lifesycle', 'Webhooks', 'LIFE-003'], ['whatsapp', 'Templates', 'WA-001']]) {
