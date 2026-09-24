@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from '../router';
-import { getPlaybooks, getIssues, getPrimaryGuide, addGuide, getGuides, publishGuideUpdate, guideContent, formatGuideVersion, type GuideContent, type VersionedGuide, type Step, type CommonProblem } from '../data';
+import { getPlaybooks, getIssues, getPrimaryGuide, addGuide, getGuides, publishGuideUpdate, guideContent, formatGuideVersion, formatStorageError, type GuideContent, type VersionedGuide, type Step, type CommonProblem } from '../data';
 import { guideChecklist } from '../guideTemplate';
 import { GuideArticle } from '../components/knowledge/GuideArticle';
 import { IssueSelector } from '../components/knowledge/IssueSelector';
@@ -44,7 +44,7 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
         : addGuide({ ...content, issueId, playbookId: pb!.id, revisionHistory: [] });
       navigate(`/playbooks/${pb!.slug}/guides/${saved.id}`);
     }
-    catch(e){setError(e instanceof Error?e.message:'Could not publish the Guide.');}
+    catch(e){setError(formatStorageError(e, 'Could not publish the Guide.'));}
   };
   if(preview&&base) return <div className="guide-article"><section className="issue-connection"><h2>Preview Changes</h2><p>Unpublished changes · Current Guide remains v{formatGuideVersion(base.versionNumber)}.</p><div className="inline-actions"><button className="btn-secondary" onClick={()=>setPreview(false)}>Back to Editing</button><button className="btn-primary" disabled={!hasChanges} onClick={publish}>Publish Update</button></div></section>{error&&<p className="knowledge-error" role="alert">{error}</p>}<GuideArticle guide={{...base,...structuredClone(content)}} versionLabel="Unpublished preview"/></div>;
   return <div className="editor"><button className="back-link" onClick={back}><ArrowLeft size={14}/>{base?'Back to Guide':'Back to Create'}</button><PageHeader title={base?'Edit Guide':'Create Guide'} description="Document the solution to an existing Issue."/>

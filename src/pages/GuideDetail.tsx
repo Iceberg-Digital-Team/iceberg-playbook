@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, Edit, Link2, Share2 } from 'lucide-react';
 import { useRouter } from '../router';
-import { getGuides, getPlaybooks, getGuideVersion, getGuideVersions, guideContent, restoreGuideVersion, formatGuideDate, formatGuideVersion } from '../data';
+import { getGuides, getPlaybooks, getGuideVersion, getGuideVersions, guideContent, restoreGuideVersion, formatGuideDate, formatGuideVersion, formatStorageError } from '../data';
 import { GuideArticle } from '../components/knowledge/GuideArticle';
 import { GuideHistory, RestoreGuideDialog } from '../components/knowledge/GuideHistory';
 import '../components/knowledge/Knowledge.css';
@@ -35,7 +35,7 @@ export function GuideDetail() {
     try {
       restoreGuideVersion(current.id, confirmation.target, confirmation.expected);
       setConfirmation(undefined); setMessage('Version restored successfully.'); navigate(baseUrl);
-    } catch (e) { setConfirmation(undefined); setMessage(e instanceof Error ? e.message : 'Could not restore this version.'); }
+    } catch (e) { setConfirmation(undefined); setMessage(formatStorageError(e, 'Could not restore this version.')); }
   };
   const copy = async () => {
     try { await navigator.clipboard.writeText(window.location.href); setMessage('Link copied.'); }

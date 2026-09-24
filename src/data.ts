@@ -616,22 +616,87 @@ const defaultSOPs: SOP[] = [
 ];
 
 // Load from local storage or set default
-const loadData = <T>(key: string, defaults: T[]): T[] => {
+export const loadData = <T>(key: string, defaults: T[]): T[] => {
   try {
     const data = localStorage.getItem(`ib_playbook_${key}`);
-    return data ? JSON.parse(data) : defaults;
+    if (!data) return defaults;
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : defaults;
   } catch {
     return defaults;
   }
 };
 
-const saveData = <T>(key: string, data: T[]) => {
+export const saveData = <T>(key: string, data: T[]) => {
   try {
     localStorage.setItem(`ib_playbook_${key}`, JSON.stringify(data));
-  } catch (e) {
-    console.error('Failed to save to localStorage', e);
+  } catch {
+    throw new Error('Could not save. Browser storage may be full or unavailable. Your changes have been kept open.');
   }
 };
+
+export function formatStorageError(error: unknown, fallbackMessage = 'Could not save changes.'): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+  return fallbackMessage;
+}
+
+export interface StorageKeyStatus {
+  key: string;
+  corrupted: boolean;
+  backupKey?: string;
+  backupFailed?: boolean;
+  error?: string;
+}
+
+export interface StorageIntegrityResult {
+  status: 'healthy' | 'corrupted';
+  affectedKeys: string[];
+  details: Record<string, StorageKeyStatus>;
+  canReset: boolean;
+}
+
+const BACKUP_MANIFEST_KEY = 'ib_playbook_corrupt_manifest';
+let backupCounter = 0;
+
+function cleanStorageKey(key: string): string {
+  return key.replace(/^ib_playbook_/, '');
+}
+
+function getNextBackupKey(cleanKey: string): string {
+  const ts = Date.now();
+  let candidate = `ib_playbook_corrupt_backup_${cleanKey}_${ts}_${++backupCounter}`;
+  while (localStorage.getItem(candidate) !== null) {
+    candidate = `ib_playbook_corrupt_backup_${cleanKey}_${ts}_${++backupCounter}`;
+  }
+  return candidate;
+}
+
+interface BackupManifestRecord {
+  backupKey: string;
+  rawValue: string;
+}
+
+function getBackupManifest(): Record<string, BackupManifestRecord> {
+  try {
+    const raw = localStorage.getItem(BACKUP_MANIFEST_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveBackupManifest(manifest: Record<string, BackupManifestRecord>) {
+  try {
+    localStorage.setItem(BACKUP_MANIFEST_KEY, JSON.stringify(manifest));
+  } catch {
+    // If manifest cannot be saved due to quota, individual backups remain in their keys
+  }
+}
 
 // One atomic, versioned envelope keeps Issue/Guide relationships consistent.
 // Legacy storage keys are retained as the original backup; SOP storage is unchanged.
@@ -710,7 +775,7 @@ export function migrateKnowledge(oldIssues: LegacyIssue[], oldGuides: Omit<Guide
   return { version: 2, issues, guides };
 }
 
-function validateKnowledge(data: Knowledge) {
+export function validateKnowledge(data: Knowledge) {
   const ids = new Set<string>();
   for (const issue of data.issues) {
     if (!issue.id || ids.has(issue.id)) throw new Error('Issue codes must be unique.');
@@ -739,7 +804,15 @@ function writeKnowledge(data: Knowledge) {
 function readKnowledge(): Knowledge {
   const stored = localStorage.getItem(knowledgeKey);
   if (stored) {
-    const data = JSON.parse(stored) as Knowledge;
+    let data: Knowledge;
+    try {
+      data = JSON.parse(stored) as Knowledge;
+      if (!data || typeof data !== 'object' || data.version !== 3 || !Array.isArray(data.issues) || !Array.isArray(data.guides) || !Array.isArray(data.guideVersions)) {
+        return { version: 3, issues: [], guides: [], guideVersions: [] };
+      }
+    } catch {
+      return { version: 3, issues: [], guides: [], guideVersions: [] };
+    }
     const waG01 = data.guides.find(g => g.id === 'WA-G01');
     if (waG01 && waG01.versionNumber === 1 && !waG01.video && !waG01.pdf && !waG01.steps[0]?.screenshot) {
       const def = defaultGuides.find(g => g.id === 'WA-G01');
@@ -757,7 +830,11 @@ function readKnowledge(): Knowledge {
         }
       }
     }
-    validateKnowledge(data);
+    try {
+      validateKnowledge(data);
+    } catch {
+      return { version: 3, issues: [], guides: [], guideVersions: [] };
+    }
     return data;
   }
   const previous = localStorage.getItem('ib_playbook_knowledge_v2');
@@ -765,6 +842,188 @@ function readKnowledge(): Knowledge {
   const migrated: Knowledge = { version: 3, issues: legacy.issues, guides: legacy.guides.map(initialIdentity), guideVersions: legacy.guides.map(g => initialVersion(g, true)) };
   writeKnowledge(migrated);
   return migrated;
+}
+
+export function checkStorageIntegrity(): StorageIntegrityResult {
+  const affectedKeys: string[] = [];
+  const details: Record<string, StorageKeyStatus> = {};
+  let canReset = true;
+
+  const manifest = getBackupManifest();
+  let manifestChanged = false;
+
+  const checkKey = (key: string, validateFn: (raw: string) => void) => {
+    const raw = localStorage.getItem(key);
+    if (raw === null) {
+      return;
+    }
+    let isCorrupted = false;
+    let errorMessage: string | undefined;
+    try {
+      validateFn(raw);
+    } catch (e) {
+      isCorrupted = true;
+      errorMessage = e instanceof Error ? e.message : 'Invalid structure';
+    }
+
+    if (isCorrupted) {
+      affectedKeys.push(key);
+      const existing = manifest[key];
+      let backupKey: string | undefined;
+      let backupFailed = false;
+
+      if (existing && existing.rawValue === raw && localStorage.getItem(existing.backupKey) === raw) {
+        backupKey = existing.backupKey;
+      } else {
+        const candidate = getNextBackupKey(cleanStorageKey(key));
+        try {
+          localStorage.setItem(candidate, raw);
+          const readBack = localStorage.getItem(candidate);
+          if (readBack === raw) {
+            backupKey = candidate;
+            manifest[key] = { backupKey: candidate, rawValue: raw };
+            manifestChanged = true;
+          } else {
+            backupFailed = true;
+          }
+        } catch {
+          backupFailed = true;
+        }
+      }
+
+      if (backupFailed) {
+        canReset = false;
+      }
+
+      details[key] = {
+        key,
+        corrupted: true,
+        backupKey,
+        backupFailed,
+        error: errorMessage,
+      };
+    }
+  };
+
+  // 1. Knowledge v3
+  checkKey(knowledgeKey, (raw) => {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Knowledge envelope is not an object.');
+    }
+    if (parsed.version !== 3) {
+      throw new Error(`Expected Knowledge version 3, found ${parsed.version}.`);
+    }
+    if (!Array.isArray(parsed.issues) || !Array.isArray(parsed.guides) || !Array.isArray(parsed.guideVersions)) {
+      throw new Error('Knowledge issues, guides, or guideVersions is not an array.');
+    }
+    validateKnowledge(parsed as Knowledge);
+  });
+
+  // If knowledgeKey was absent, check legacy v2
+  if (localStorage.getItem(knowledgeKey) === null && localStorage.getItem('ib_playbook_knowledge_v2') !== null) {
+    checkKey('ib_playbook_knowledge_v2', (raw) => {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || parsed.version !== 2 || !Array.isArray(parsed.issues) || !Array.isArray(parsed.guides)) {
+        throw new Error('Legacy knowledge is invalid.');
+      }
+    });
+  }
+
+  // 2. Playbooks
+  checkKey('ib_playbook_playbooks', (raw) => {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      throw new Error('Playbooks must be an array.');
+    }
+    const ids = new Set<string>();
+    for (const p of parsed) {
+      if (!p || typeof p !== 'object' || typeof p.id !== 'string' || typeof p.slug !== 'string' || typeof p.name !== 'string' || typeof p.code !== 'string') {
+        throw new Error('Invalid playbook record.');
+      }
+      if (ids.has(p.id)) {
+        throw new Error('Playbook IDs must be unique.');
+      }
+      ids.add(p.id);
+    }
+  });
+
+  // 3. SOPs
+  checkKey('ib_playbook_sops', (raw) => {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      throw new Error('SOPs must be an array.');
+    }
+    const ids = new Set<string>();
+    for (const s of parsed) {
+      if (!s || typeof s !== 'object' || typeof s.id !== 'string' || typeof s.playbookId !== 'string' || typeof s.title !== 'string') {
+        throw new Error('Invalid SOP record.');
+      }
+      if (ids.has(s.id)) {
+        throw new Error('SOP IDs must be unique.');
+      }
+      ids.add(s.id);
+    }
+  });
+
+  if (manifestChanged) {
+    saveBackupManifest(manifest);
+  }
+
+  return {
+    status: affectedKeys.length > 0 ? 'corrupted' : 'healthy',
+    affectedKeys,
+    details,
+    canReset: affectedKeys.length === 0 || canReset,
+  };
+}
+
+export function getCorruptedBackupData(): Record<string, string> {
+  const integrity = checkStorageIntegrity();
+  const result: Record<string, string> = {};
+  for (const key of integrity.affectedKeys) {
+    const detail = integrity.details[key];
+    if (detail?.backupKey) {
+      const val = localStorage.getItem(detail.backupKey);
+      if (val !== null) {
+        result[key] = val;
+        continue;
+      }
+    }
+    const raw = localStorage.getItem(key);
+    if (raw !== null) {
+      result[key] = raw;
+    }
+  }
+  return result;
+}
+
+export function resetCorruptedStorage(): StorageIntegrityResult {
+  const integrity = checkStorageIntegrity();
+  if (integrity.status === 'healthy') {
+    return integrity;
+  }
+  if (!integrity.canReset) {
+    throw new Error('Cannot reset storage: backup could not be verified. Please download your data before resetting.');
+  }
+
+  const manifest = getBackupManifest();
+  for (const key of integrity.affectedKeys) {
+    if (key === knowledgeKey) {
+      const emptyKnowledge: Knowledge = { version: 3, issues: [], guides: [], guideVersions: [] };
+      localStorage.setItem(knowledgeKey, JSON.stringify(emptyKnowledge));
+    } else if (key === 'ib_playbook_playbooks') {
+      localStorage.setItem('ib_playbook_playbooks', JSON.stringify([]));
+    } else if (key === 'ib_playbook_sops') {
+      localStorage.setItem('ib_playbook_sops', JSON.stringify([]));
+    } else if (key === 'ib_playbook_knowledge_v2') {
+      localStorage.setItem('ib_playbook_knowledge_v2', JSON.stringify({ version: 2, issues: [], guides: [] }));
+    }
+    delete manifest[key];
+  }
+  saveBackupManifest(manifest);
+
+  return checkStorageIntegrity();
 }
 export const getIssues = (): Issue[] => readKnowledge().issues;
 export const getGuides = (): VersionedGuide[] => readKnowledge().guides;
