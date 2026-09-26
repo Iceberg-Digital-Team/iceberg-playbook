@@ -6,6 +6,7 @@ export interface SignInInput { email: string; password: string; remember: boolea
 export interface AuthAdapter {
   signIn(input: SignInInput): Promise<AuthSession>;
   signOut(): Promise<void>;
+  getSession?(): Promise<AuthSession | null>;
 }
 export function validateSignIn(email: string, password: string) {
   return {

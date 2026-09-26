@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { mockAuthAdapter, type AuthAdapter, type AuthSession, type SignInInput } from './auth';
 
 interface AuthContextValue {
@@ -9,6 +9,15 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children, adapter = mockAuthAdapter }: { children: ReactNode; adapter?: AuthAdapter }) {
   const [session, setSession] = useState<AuthSession | null>(null);
+
+  useEffect(() => {
+    if (adapter.getSession) {
+      adapter.getSession().then(s => {
+        if (s) setSession(s);
+      }).catch(() => {});
+    }
+  }, [adapter]);
+
   return <AuthContext.Provider value={{ session,
     signIn: async input => { setSession(await adapter.signIn(input)); },
     signOut: async () => { await adapter.signOut(); setSession(null); },
