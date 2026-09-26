@@ -8,11 +8,17 @@ export async function fetchUserProfile(
 ): Promise<Profile | null> {
   const { data, error } = await client
     .from('profiles')
-    .select('id, full_name, role, avatar_url')
+    .select('id, full_name, role, department, avatar_url')
     .eq('id', userId)
     .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
+    console.error('[Auth] Failed to load user profile:', error.message);
+    return null;
+  }
+
+  if (!data) {
+    console.warn('[Auth] No profile found for user:', userId);
     return null;
   }
 
@@ -20,7 +26,7 @@ export async function fetchUserProfile(
     user_id: data.id,
     full_name: data.full_name || 'Team Member',
     role: data.role as Role,
-    department: 'Support Team',
+    department: data.department || 'Support Team',
     avatar_url: data.avatar_url ?? null,
   };
 }
@@ -40,6 +46,12 @@ export function createSupabaseAuthAdapter(
       }
 
       const profile = await fetchUserProfile(client, data.user.id);
+      if (!profile) {
+        // Authenticated in auth.users, but no matching profile exists in public.profiles.
+        // Sign out immediately and deny access with a clear error.
+        await client.auth.signOut().catch(() => {});
+        throw new Error('Account profile not found. Please contact an administrator to provision your profile.');
+      }
 
       return {
         user: {
@@ -53,25 +65,41 @@ export function createSupabaseAuthAdapter(
     async signOut(): Promise<void> {
       const { error } = await client.auth.signOut();
       if (error) {
+        console.error('[Auth] Error signing out from Supabase:', error.message);
         throw new Error(error.message);
       }
     },
 
     async getSession(): Promise<AuthSession | null> {
-      const { data: { session }, error } = await client.auth.getSession();
-      if (error || !session?.user) {
+      try {
+        const { data: { session }, error } = await client.auth.getSession();
+        if (error) {
+          console.error('[Auth] Failed to get session from Supabase:', error.message);
+          return null;
+        }
+
+        if (!session?.user) {
+          return null;
+        }
+
+        const profile = await fetchUserProfile(client, session.user.id);
+        if (!profile) {
+          console.warn('[Auth] Session user has no profile; clearing session.');
+          await client.auth.signOut().catch(() => {});
+          return null;
+        }
+
+        return {
+          user: {
+            id: session.user.id,
+            email: session.user.email || '',
+          },
+          profile,
+        };
+      } catch (err) {
+        console.error('[Auth] Unexpected error during session restoration:', err);
         return null;
       }
-
-      const profile = await fetchUserProfile(client, session.user.id);
-
-      return {
-        user: {
-          id: session.user.id,
-          email: session.user.email || '',
-        },
-        profile,
-      };
     },
   };
 }

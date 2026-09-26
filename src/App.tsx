@@ -29,15 +29,16 @@ import { LoginPage, ForgotPasswordPage } from './pages/LoginPage';
 
 function App() {
   const [integrity, setIntegrity] = useState(() => checkStorageIntegrity());
-  const { session } = useAuth();
+  const { session, loading } = useAuth();
   const { path } = useRouter();
   const isAuthPage = path === '/login' || path === '/forgot-password';
 
   useEffect(() => {
+    if (loading) return;
     if (integrity.status === 'corrupted' || integrity.status === 'unavailable') return;
     if (!session && !isAuthPage) window.location.replace('#/login');
     else if (session && isAuthPage) window.location.replace('#/');
-  }, [session, isAuthPage, integrity.status]);
+  }, [session, isAuthPage, integrity.status, loading]);
 
   if (integrity.status === 'unavailable') {
     return (
@@ -60,6 +61,8 @@ function App() {
   if (integrity.status === 'corrupted') {
     return <StorageRecovery integrity={integrity} onRecovered={() => setIntegrity(checkStorageIntegrity())} />;
   }
+
+  if (loading) return null;
 
   if (!session) return path === '/forgot-password' ? <ForgotPasswordPage/> : <LoginPage/>;
   return <WorkspaceApp/>;
