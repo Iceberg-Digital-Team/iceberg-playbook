@@ -35,11 +35,11 @@ BEGIN
     -- --------------------------------------------------------------------------
     BEGIN
         INSERT INTO public.playbooks (id, slug, name, code, description)
-        VALUES ('bad-pb', 'bad-pb', 'Bad PB', 'TOOLONGPREFIX', 'Desc');
+        VALUES ('bad-pb', 'bad-pb', 'Bad PB', 'A-1', 'Desc');
         RAISE EXCEPTION 'TEST 1 FAILED: Invalid playbook code was accepted!';
     EXCEPTION WHEN check_violation THEN
         v_test_pass_count := v_test_pass_count + 1;
-        RAISE NOTICE 'Test 1 Passed: Playbook code length constraint enforced.';
+        RAISE NOTICE 'Test 1 Passed: Playbook code format constraint enforced.';
     END;
 
     -- --------------------------------------------------------------------------
