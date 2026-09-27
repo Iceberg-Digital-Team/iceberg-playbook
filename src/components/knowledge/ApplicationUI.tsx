@@ -1,6 +1,6 @@
 import { Search, ArrowRight } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { getPlaybooks, getSolutionState, formatGuideDate, formatGuideVersion, type Issue, type VersionedGuide, type SOP } from '../../data';
+import { getPlaybooks, getSolutionState, formatGuideDate, formatGuideVersion, type Issue, type VersionedGuide, type SOP, type Playbook } from '../../data';
 
 export function PageHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return <header className="page-heading"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{action}</header>;
@@ -16,8 +16,8 @@ export function FormSection({ title, hint, children, optional = false, open = fa
   return optional ? <details className="form-section disclosure" open={open || undefined}><summary>{title}<span>Optional</span></summary>{body}</details> : <section className="form-section"><h2>{title}</h2>{body}</section>;
 }
 export type ContentItem = Issue | VersionedGuide | SOP;
-export function ContentRow({ item, excerpt = false }: { item: ContentItem; excerpt?: boolean }) {
-  const pb = getPlaybooks().find(p => p.id === item.playbookId);
+export function ContentRow({ item, excerpt = false, playbook }: { item: ContentItem; excerpt?: boolean; playbook?: Playbook }) {
+  const pb = playbook || getPlaybooks().find(p => p.id === item.playbookId);
   const type = 'issueId' in item ? 'Guide' : 'owner' in item ? 'SOP' : 'Issue';
   const folder = type === 'Guide' ? 'guides' : type === 'SOP' ? 'sops' : 'issues';
   if (!pb) return null;

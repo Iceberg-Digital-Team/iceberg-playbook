@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from '../router';
-import type { Playbook } from '../data';
+import type { Playbook, Issue } from '../data';
 import { getPlaybookBySlug } from '../services/playbookService';
-import { getIssues, getGuides, getSOPs, getPrimaryGuide } from '../data';
+import { listIssuesByPlaybook } from '../services/issueService';
+import { getGuides, getSOPs, getPrimaryGuide } from '../data';
 import { PageHeader, SearchField, ContentRow, StateMessage, type ContentItem } from '../components/knowledge/ApplicationUI';
 
 export function PlaybookDetail() {
@@ -13,6 +14,7 @@ export function PlaybookDetail() {
   const [status, setStatus] = useState('All');
 
   const [pb, setPb] = useState<Playbook | null>(null);
+  const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(Boolean(params.slug));
   const [error, setError] = useState<string | null>(null);
 
@@ -22,12 +24,20 @@ export function PlaybookDetail() {
       return;
     }
     getPlaybookBySlug(params.slug)
-      .then(item => {
-        if (active) {
-          setPb(item);
-          setError(null);
-          setLoading(false);
+      .then(async item => {
+        if (!active) return;
+        setPb(item);
+        if (item) {
+          try {
+            const pbIssues = await listIssuesByPlaybook(item.id);
+            if (active) {
+              setIssues(pbIssues);
+            }
+          } catch (issueErr) {
+            console.error('Failed to load issues for playbook:', issueErr);
+          }
         }
+        setLoading(false);
       })
       .catch(err => {
         if (active) {
@@ -81,7 +91,6 @@ export function PlaybookDetail() {
     );
   }
 
-  const issues = getIssues().filter(i => i.playbookId === pb.id);
   const guides = getGuides().filter(i => i.playbookId === pb.id);
   const sops = getSOPs().filter(i => i.playbookId === pb.id);
 
@@ -95,7 +104,7 @@ export function PlaybookDetail() {
   const all = filter([...issues, ...guides, ...sops]);
   const list = filter(tab === 'Issues' ? issues : tab === 'Guides' ? guides : sops);
   const create = tab === 'Overview' ? '' : `/${tab === 'Issues' ? 'issue' : tab === 'Guides' ? 'guide' : 'sop'}`;
-  const rows = (items: ContentItem[]) => items.map(i => <ContentRow item={i} key={i.id} />);
+  const rows = (items: ContentItem[]) => items.map(i => <ContentRow item={i} key={i.id} playbook={pb} />);
 
   return (
     <div className="page">

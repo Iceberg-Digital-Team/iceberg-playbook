@@ -1,24 +1,280 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from '../router';
-import { getPlaybooks, addIssue, formatStorageError, type Issue, type Attachment } from '../data';
+import type { Issue, Attachment, Playbook } from '../data';
+import { listPlaybooks } from '../services/playbookService';
+import { createIssue } from '../services/issueService';
 import { PageHeader, FormSection } from '../components/knowledge/ApplicationUI';
 import { StringList, revealInvalid } from '../components/knowledge/EditorFields';
+
 export function CreateIssue() {
- const {navigate,params}=useRouter(); const playbooks=getPlaybooks(); const [playbookId,setPlaybookId]=useState(params.playbook||playbooks[0]?.id||'');
- const [title,setTitle]=useState('');const [summary,setSummary]=useState('');const [status,setStatus]=useState<Issue['status']>('Draft');const [difficulty,setDifficulty]=useState<Issue['difficulty']>('Medium');const [time,setTime]=useState('');
- const [symptoms,setSymptoms]=useState<string[]>(['']);const [errorMessage,setErrorMessage]=useState('');const [context,setContext]=useState('');const [area,setArea]=useState('');const [information,setInformation]=useState<string[]>([]);const [attachments,setAttachments]=useState<Attachment[]>([]);const [notes,setNotes]=useState('');const [error,setError]=useState('');
- const pb=playbooks.find(p=>p.id===playbookId);
- const submit=(e:React.FormEvent)=>{e.preventDefault();setError('');try{const issue=addIssue({playbookId,title:title.trim(),summary:summary.trim(),status,difficulty,estimatedTime:time,symptoms:symptoms.filter(s=>s.trim()),errorMessage,context,affectedArea:area,informationToCollect:information.filter(s=>s.trim()),attachments:attachments.filter(a=>a.url.trim()),internalNotes:notes});navigate(`/playbooks/${pb!.slug}/issues/${issue.id}`);}catch(e){setError(formatStorageError(e, 'Could not save the Issue.'));}};
- return <div className="editor"><a className="back-link" href="#/create"><ArrowLeft size={14}/>Back to Create</a><PageHeader title="Create Issue" description="Document the problem so Support can identify and investigate it."/>
- <form onSubmit={submit} onInvalid={revealInvalid}><FormSection title="Basic Information"><div className="form-grid"><label>Playbook *<select required value={playbookId} onChange={e=>setPlaybookId(e.target.value)}><option value="" disabled>Select a Playbook</option>{playbooks.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Issue Code<input readOnly value={`${pb?.code||'ISS'} — assigned when saved`}/></label></div><label>Issue Title *<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Phone Number Already Registered"/></label>
- <details className="disclosure"><summary>Status & investigation details</summary><div className="optional-fields form-grid"><label>Status<select value={status} onChange={e=>setStatus(e.target.value as Issue['status'])}><option>Draft</option><option>Verified</option></select></label><label>Difficulty<select value={difficulty} onChange={e=>setDifficulty(e.target.value as Issue['difficulty'])}><option>Easy</option><option>Medium</option><option>Advanced</option></select></label><label>Estimated Investigation Time<input value={time} onChange={e=>setTime(e.target.value)} placeholder="e.g. 15 min"/></label></div></details></FormSection>
- <FormSection title="Problem Summary"><label>Problem Summary *<textarea required rows={4} value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Describe the problem and who it affects."/></label></FormSection>
- <FormSection title="Symptoms" hint="What does the customer experience?"><StringList label="Symptom" values={symptoms} onChange={setSymptoms}/></FormSection>
- <FormSection title="Error Message / Code" optional><label>Exact error<textarea rows={2} value={errorMessage} onChange={e=>setErrorMessage(e.target.value)}/></label></FormSection>
- <FormSection title="When Does This Happen?" optional><label>Context<textarea rows={3} value={context} onChange={e=>setContext(e.target.value)}/></label><label>Affected Area<input value={area} onChange={e=>setArea(e.target.value)}/></label></FormSection>
- <FormSection title="Information to Collect" optional><StringList label="Information item" values={information} onChange={setInformation}/></FormSection>
- <FormSection title="Attachments" optional hint="Link screenshots or files showing the problem.">{attachments.map((a,i)=><div className="form-section-body" key={i}><label>Attachment {i+1} name<input value={a.name} onChange={e=>setAttachments(attachments.map((v,n)=>n===i?{...v,name:e.target.value}:v))}/></label><label>Attachment {i+1} URL<input type="url" pattern="https?://.*" required value={a.url} onChange={e=>setAttachments(attachments.map((v,n)=>n===i?{...v,url:e.target.value}:v))}/></label><button className="back-link" type="button" onClick={()=>setAttachments(attachments.filter((_,n)=>n!==i))}>Remove attachment</button></div>)}<button type="button" className="btn-secondary" onClick={()=>setAttachments([...attachments,{name:'',url:''}])}><Plus size={14}/>Add attachment link</button></FormSection>
- <FormSection title="Internal Notes" optional><label>Support Only<textarea rows={3} value={notes} onChange={e=>setNotes(e.target.value)}/></label></FormSection>
- {error&&<p className="knowledge-error" role="alert">{error}</p>}<div className="form-actions"><a className="btn-secondary" href="#/create">Cancel</a><button className="btn-primary" type="submit">Save Issue</button></div></form></div>;
+  const { navigate, params } = useRouter();
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [playbooksLoading, setPlaybooksLoading] = useState(true);
+  const [playbookId, setPlaybookId] = useState(params.playbook || '');
+  const [title, setTitle] = useState('');
+  const [summary, setSummary] = useState('');
+  const [status, setStatus] = useState<Issue['status']>('Draft');
+  const [difficulty, setDifficulty] = useState<Issue['difficulty']>('Medium');
+  const [time, setTime] = useState('');
+  const [symptoms, setSymptoms] = useState<string[]>(['']);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [context, setContext] = useState('');
+  const [area, setArea] = useState('');
+  const [information, setInformation] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    listPlaybooks()
+      .then(items => {
+        if (!active) return;
+        setPlaybooks(items);
+        setPlaybooksLoading(false);
+        if (items.length > 0) {
+          setPlaybookId(current =>
+            current || (params.playbook && items.some(p => p.id === params.playbook) ? params.playbook : items[0].id)
+          );
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setError(err instanceof Error ? err.message : 'Could not load Playbooks.');
+          setPlaybooksLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [params.playbook]);
+
+  const pb = playbooks.find(p => p.id === playbookId);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!playbookId) {
+      setError('Select a Playbook for this Issue.');
+      return;
+    }
+    if (!title.trim() || !summary.trim()) {
+      setError('Issue title and problem summary are required.');
+      return;
+    }
+    setError('');
+    setSaving(true);
+    try {
+      const issue = await createIssue({
+        playbookId,
+        title: title.trim(),
+        summary: summary.trim(),
+        status,
+        difficulty,
+        estimatedTime: time.trim(),
+        symptoms: symptoms.filter(s => s.trim()),
+        errorMessage: errorMessage.trim(),
+        context: context.trim(),
+        affectedArea: area.trim(),
+        informationToCollect: information.filter(s => s.trim()),
+        attachments: attachments.filter(a => a.url.trim()),
+        internalNotes: notes.trim(),
+      });
+      const targetPb = playbooks.find(p => p.id === playbookId);
+      navigate(`/playbooks/${targetPb?.slug || playbookId}/issues/${encodeURIComponent(issue.id)}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the Issue.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="editor">
+      <a className="back-link" href="#/create">
+        <ArrowLeft size={14} />Back to Create
+      </a>
+      <PageHeader
+        title="Create Issue"
+        description="Document the problem so Support can identify and investigate it."
+      />
+      <form onSubmit={submit} onInvalid={revealInvalid}>
+        <FormSection title="Basic Information">
+          <div className="form-grid">
+            <label>
+              Playbook *
+              <select
+                required
+                value={playbookId}
+                onChange={e => setPlaybookId(e.target.value)}
+              >
+                <option value="" disabled>
+                  {playbooksLoading ? 'Loading Playbooks…' : 'Select a Playbook'}
+                </option>
+                {playbooks.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Issue Code
+              <input readOnly value={`${pb?.code || 'ISS'} — assigned when saved`} />
+            </label>
+          </div>
+          <label>
+            Issue Title *
+            <input
+              required
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Phone Number Already Registered"
+            />
+          </label>
+          <details className="disclosure">
+            <summary>Status & investigation details</summary>
+            <div className="optional-fields form-grid">
+              <label>
+                Status
+                <select
+                  value={status}
+                  onChange={e => setStatus(e.target.value as Issue['status'])}
+                >
+                  <option>Draft</option>
+                  <option>Verified</option>
+                </select>
+              </label>
+              <label>
+                Difficulty
+                <select
+                  value={difficulty}
+                  onChange={e => setDifficulty(e.target.value as Issue['difficulty'])}
+                >
+                  <option>Easy</option>
+                  <option>Medium</option>
+                  <option>Advanced</option>
+                </select>
+              </label>
+              <label>
+                Estimated Investigation Time
+                <input
+                  value={time}
+                  onChange={e => setTime(e.target.value)}
+                  placeholder="e.g. 15 min"
+                />
+              </label>
+            </div>
+          </details>
+        </FormSection>
+        <FormSection title="Problem Summary">
+          <label>
+            Problem Summary *
+            <textarea
+              required
+              rows={4}
+              value={summary}
+              onChange={e => setSummary(e.target.value)}
+              placeholder="Describe the problem and who it affects."
+            />
+          </label>
+        </FormSection>
+        <FormSection title="Symptoms" hint="What does the customer experience?">
+          <StringList label="Symptom" values={symptoms} onChange={setSymptoms} />
+        </FormSection>
+        <FormSection title="Error Message / Code" optional>
+          <label>
+            Exact error
+            <textarea
+              rows={2}
+              value={errorMessage}
+              onChange={e => setErrorMessage(e.target.value)}
+            />
+          </label>
+        </FormSection>
+        <FormSection title="When Does This Happen?" optional>
+          <label>
+            Context
+            <textarea
+              rows={3}
+              value={context}
+              onChange={e => setContext(e.target.value)}
+            />
+          </label>
+          <label>
+            Affected Area
+            <input value={area} onChange={e => setArea(e.target.value)} />
+          </label>
+        </FormSection>
+        <FormSection title="Information to Collect" optional>
+          <StringList label="Information item" values={information} onChange={setInformation} />
+        </FormSection>
+        <FormSection title="Attachments" optional hint="Link screenshots or files showing the problem.">
+          {attachments.map((a, i) => (
+            <div className="form-section-body" key={i}>
+              <label>
+                Attachment {i + 1} name
+                <input
+                  value={a.name}
+                  onChange={e =>
+                    setAttachments(
+                      attachments.map((v, n) => (n === i ? { ...v, name: e.target.value } : v))
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Attachment {i + 1} URL
+                <input
+                  type="url"
+                  pattern="https?://.*"
+                  required
+                  value={a.url}
+                  onChange={e =>
+                    setAttachments(
+                      attachments.map((v, n) => (n === i ? { ...v, url: e.target.value } : v))
+                    )
+                  }
+                />
+              </label>
+              <button
+                className="back-link"
+                type="button"
+                onClick={() => setAttachments(attachments.filter((_, n) => n !== i))}
+              >
+                Remove attachment
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setAttachments([...attachments, { name: '', url: '' }])}
+          >
+            <Plus size={14} />Add attachment link
+          </button>
+        </FormSection>
+        <FormSection title="Internal Notes" optional>
+          <label>
+            Support Only
+            <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} />
+          </label>
+        </FormSection>
+        {error && (
+          <p className="knowledge-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="form-actions">
+          <a className="btn-secondary" href="#/create">
+            Cancel
+          </a>
+          <button className="btn-primary" type="submit" disabled={saving}>
+            {saving ? 'Saving…' : 'Save Issue'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
