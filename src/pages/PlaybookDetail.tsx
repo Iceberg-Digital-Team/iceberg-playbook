@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from '../router';
-import type { Playbook, Issue } from '../data';
+import type { Playbook, Issue, VersionedGuide } from '../data';
 import { getPlaybookBySlug } from '../services/playbookService';
 import { listIssuesByPlaybook } from '../services/issueService';
-import { getGuides, getSOPs, getPrimaryGuide } from '../data';
+import { listGuidesByPlaybook } from '../services/guideService';
+import { getSOPs } from '../data';
 import { PageHeader, SearchField, ContentRow, StateMessage, type ContentItem } from '../components/knowledge/ApplicationUI';
 
 export function PlaybookDetail() {
@@ -15,6 +16,7 @@ export function PlaybookDetail() {
 
   const [pb, setPb] = useState<Playbook | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [guides, setGuides] = useState<VersionedGuide[]>([]);
   const [loading, setLoading] = useState(Boolean(params.slug));
   const [error, setError] = useState<string | null>(null);
 
@@ -29,12 +31,16 @@ export function PlaybookDetail() {
         setPb(item);
         if (item) {
           try {
-            const pbIssues = await listIssuesByPlaybook(item.id);
+            const [pbIssues, pbGuides] = await Promise.all([
+              listIssuesByPlaybook(item.id),
+              listGuidesByPlaybook(item.id)
+            ]);
             if (active) {
               setIssues(pbIssues);
+              setGuides(pbGuides);
             }
-          } catch (issueErr) {
-            console.error('Failed to load issues for playbook:', issueErr);
+          } catch (contentErr) {
+            console.error('Failed to load playbook content:', contentErr);
           }
         }
         setLoading(false);
@@ -91,7 +97,6 @@ export function PlaybookDetail() {
     );
   }
 
-  const guides = getGuides().filter(i => i.playbookId === pb.id);
   const sops = getSOPs().filter(i => i.playbookId === pb.id);
 
   const filter = (items: ContentItem[]) =>
@@ -168,8 +173,8 @@ export function PlaybookDetail() {
             </section>
             <section>
               <h2>Needs Guide</h2>
-              {filter(issues.filter(i => !getPrimaryGuide(i.id))).length ? (
-                rows(filter(issues.filter(i => !getPrimaryGuide(i.id))).slice(0, 4))
+              {filter(issues.filter(i => !guides.some(g => g.issueId === i.id))).length ? (
+                rows(filter(issues.filter(i => !guides.some(g => g.issueId === i.id))).slice(0, 4))
               ) : (
                 <p className="helper-text">No Issues need a Guide in this view.</p>
               )}

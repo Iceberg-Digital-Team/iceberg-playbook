@@ -1,12 +1,25 @@
 import { useState } from 'react';
-import { getIssues, getPlaybooks, getPrimaryGuide } from '../../data';
+import { getIssues, getPlaybooks, getPrimaryGuide, type Issue, type Playbook } from '../../data';
 import './Knowledge.css';
 
-export function IssueSelector({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+export function IssueSelector({
+  value,
+  onChange,
+  issues: propIssues,
+  playbooks: propPlaybooks,
+  hasGuide: propHasGuide
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  issues?: Issue[];
+  playbooks?: Playbook[];
+  hasGuide?: (issueId: string) => boolean;
+}) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(!value);
-  const issues = getIssues();
-  const playbooks = getPlaybooks();
+  const issues = propIssues ?? getIssues();
+  const playbooks = propPlaybooks ?? getPlaybooks();
+  const checkHasGuide = propHasGuide ?? ((id: string) => Boolean(getPrimaryGuide(id)));
   const selected = issues.find(i => i.id === value);
   const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const matches = issues.filter(i => tokens.every(t => `${i.id} ${i.title} ${i.summary} ${i.symptoms.join(' ')} ${i.errorMessage} ${i.affectedArea} ${playbooks.find(p => p.id === i.playbookId)?.name}`.toLowerCase().includes(t)));
@@ -24,7 +37,7 @@ export function IssueSelector({ value, onChange }: { value: string; onChange: (i
       <ul id="related-issue-results" className="issue-selector-results">
         {matches.slice(0, 30).map(issue => <li key={issue.id}><button type="button" onClick={() => { onChange(issue.id); setSearching(false); }}>
           <span><strong>{issue.id}</strong> — {issue.title}</span>
-          <small>{playbooks.find(p => p.id === issue.playbookId)?.name} · {getPrimaryGuide(issue.id) ? 'Primary Guide already exists' : 'Guide Needed'}</small>
+          <small>{playbooks.find(p => p.id === issue.playbookId)?.name} · {checkHasGuide(issue.id) ? 'Primary Guide already exists' : 'Guide Needed'}</small>
         </button></li>)}
       </ul>
       {matches.length > 30 && <p>Keep typing to narrow the results.</p>}

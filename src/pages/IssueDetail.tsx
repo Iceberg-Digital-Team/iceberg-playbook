@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Share2, Link2, Edit, ArrowRight, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from '../router';
-import type { Issue, Playbook } from '../data';
+import type { Issue, Playbook, VersionedGuide } from '../data';
 import { getPlaybookBySlug } from '../services/playbookService';
 import { getIssueById, softDeleteIssue } from '../services/issueService';
-import { getPrimaryGuide, formatGuideVersion, formatGuideDate } from '../data';
+import { getPrimaryGuideByIssue } from '../services/guideService';
+import { formatGuideVersion, formatGuideDate } from '../data';
 import { ArticleHeader, SummarySection, InternalNotes } from '../components/article/ArticleComponents';
 import { StateMessage } from '../components/knowledge/ApplicationUI';
 import { safeMediaUrl } from '../guideTemplate';
@@ -65,6 +66,7 @@ export function IssueDetail() {
   const [message, setMessage] = useState('');
   const [pb, setPb] = useState<Playbook | null>(null);
   const [issue, setIssue] = useState<Issue | null>(null);
+  const [guide, setGuide] = useState<VersionedGuide | null>(null);
   const [loading, setLoading] = useState(Boolean(params.slug && params.id));
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -77,15 +79,18 @@ export function IssueDetail() {
     }
     Promise.all([
       getPlaybookBySlug(params.slug),
-      getIssueById(params.id)
+      getIssueById(params.id),
+      getPrimaryGuideByIssue(params.id)
     ])
-      .then(([playbookData, issueData]) => {
+      .then(([playbookData, issueData, guideData]) => {
         if (!active) return;
         setPb(playbookData);
         if (issueData && playbookData && issueData.playbookId === playbookData.id) {
           setIssue(issueData);
+          setGuide(guideData);
         } else {
           setIssue(null);
+          setGuide(null);
         }
         setLoading(false);
       })
@@ -133,8 +138,6 @@ export function IssueDetail() {
       </StateMessage>
     );
   }
-
-  const guide = getPrimaryGuide(issue.id);
 
   const copy = async () => {
     try {
