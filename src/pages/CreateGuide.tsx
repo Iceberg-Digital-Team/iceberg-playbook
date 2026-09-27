@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from '../router';
 import {
-  getGuides,
-  publishGuideUpdate,
   guideContent,
   formatGuideVersion,
   type GuideContent,
@@ -15,7 +13,7 @@ import {
 } from '../data';
 import { listPlaybooks } from '../services/playbookService';
 import { listIssues } from '../services/issueService';
-import { listGuides, createGuide } from '../services/guideService';
+import { listGuides, createGuide, publishGuideVersion, getGuideById } from '../services/guideService';
 import { guideChecklist } from '../guideTemplate';
 import { GuideArticle } from '../components/knowledge/GuideArticle';
 import { IssueSelector } from '../components/knowledge/IssueSelector';
@@ -26,11 +24,65 @@ import { type FileMetadata } from '../components/knowledge/mediaUtils';
 
 export function CreateGuide() {
   const { path, params } = useRouter();
-  const initial = path === '/guides/[id]/edit' ? getGuides().find(g => g.id === params.id) : undefined;
-  if (path === '/guides/[id]/edit' && !initial) {
-    return <StateMessage title="Guide not found" action={<a href="#/playbooks">Back to Playbooks</a>} />;
+  const isEdit = path === '/guides/[id]/edit';
+  const [initial, setInitial] = useState<VersionedGuide | null | undefined>(isEdit ? undefined : null);
+  const [loading, setLoading] = useState(isEdit && Boolean(params.id));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (isEdit && params.id) {
+      getGuideById(params.id)
+        .then(guide => {
+          if (!active) return;
+          setInitial(guide);
+          setLoading(false);
+        })
+        .catch(err => {
+          if (!active) return;
+          setError(err instanceof Error ? err.message : 'Failed to load Guide.');
+          setLoading(false);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [isEdit, params.id]);
+
+  if (loading) {
+    return (
+      <div className="editor">
+        <StateMessage title="Loading Guide…">
+          Retrieving guide for editing…
+        </StateMessage>
+      </div>
+    );
   }
-  return <GuideEditor key={initial?.id || 'new'} initial={initial} />;
+
+  if (error) {
+    return (
+      <div className="editor">
+        <StateMessage
+          error
+          title="Unable to load Guide"
+          action={<a href="#/playbooks">Back to Playbooks</a>}
+        >
+          {error}
+        </StateMessage>
+      </div>
+    );
+  }
+
+  if (path === '/guides/[id]/edit' && !initial) {
+    return (
+      <StateMessage
+        title="Guide not found"
+        action={<a href="#/playbooks">Back to Playbooks</a>}
+      />
+    );
+  }
+
+  return <GuideEditor key={initial?.id || 'new'} initial={initial || undefined} />;
 }
 
 function GuideEditor({ initial }: { initial?: VersionedGuide }) {
@@ -126,8 +178,29 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
     setSubmitting(true);
     try {
       if (base) {
-        const saved = publishGuideUpdate(base.id, content, base.currentVersionId, changes);
-        navigate(`/playbooks/${pb.slug}/guides/${saved.id}`);
+        const updated = await publishGuideVersion({
+          guideId: base.id,
+          expectedVersionId: base.currentVersionId,
+          changeSummary: changes,
+          content: {
+            title: content.title,
+            summary: content.summary,
+            status: content.status,
+            difficulty: content.difficulty,
+            estimatedTime: content.estimatedTime,
+            beforeYouStart: content.beforeYouStart,
+            requirements: content.requirements,
+            importantInformation: content.importantInformation,
+            video: content.video,
+            pdf: content.pdf,
+            steps: content.steps,
+            commonProblems: content.commonProblems,
+            faq: content.faq,
+            relatedItems: content.relatedItems,
+            internalNotes: content.internalNotes
+          }
+        });
+        navigate(`/playbooks/${pb.slug}/guides/${updated.id}`);
       } else {
         const saved = await createGuide({
           issueId: issue.id,

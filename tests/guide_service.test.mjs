@@ -185,3 +185,221 @@ test('createGuide translates database duplicate primary guide error cleanly', as
     /This Issue already has a primary Guide. Open the existing Guide./
   );
 });
+
+test('publishGuideVersion validates required fields before making RPC call', async () => {
+  const { publishGuideVersion } = await importTs('src/services/guideService.ts', 'guide-service');
+  const mockClient = {};
+
+  await assert.rejects(
+    () => publishGuideVersion({
+      guideId: '',
+      expectedVersionId: 'WA-G01:v1',
+      content: { title: 'T', summary: 'S', steps: [{ title: 'Step', description: 'Desc' }] }
+    }, mockClient),
+    /Guide ID is required/
+  );
+
+  await assert.rejects(
+    () => publishGuideVersion({
+      guideId: 'WA-G01',
+      expectedVersionId: '',
+      content: { title: 'T', summary: 'S', steps: [{ title: 'Step', description: 'Desc' }] }
+    }, mockClient),
+    /Expected version ID is required/
+  );
+
+  await assert.rejects(
+    () => publishGuideVersion({
+      guideId: 'WA-G01',
+      expectedVersionId: 'WA-G01:v1',
+      content: { title: '', summary: 'S', steps: [{ title: 'Step', description: 'Desc' }] }
+    }, mockClient),
+    /Add a Guide title, summary, and complete solution steps/
+  );
+});
+
+test('publishGuideVersion invokes fn_publish_guide_version RPC with expected version', async () => {
+  const { publishGuideVersion } = await importTs('src/services/guideService.ts', 'guide-service');
+
+  let rpcMethod = '';
+  let rpcParams = null;
+
+  const mockClient = {
+    rpc: async (fn, params) => {
+      rpcMethod = fn;
+      rpcParams = params;
+      return {
+        data: {
+          id: params.p_guide_id,
+          issue_id: 'WA-001',
+          playbook_id: 'whatsapp',
+          current_version_id: 'WA-G01:v2',
+          version_number: 2,
+          title: params.p_content.title,
+          summary: params.p_content.summary,
+          status: 'Verified',
+          difficulty: 'Medium',
+          estimated_time: '15 min',
+          steps: params.p_content.steps,
+          author: 'Development Support',
+          created_by: 'Development Support',
+          updated_by: 'Development Support',
+          created_at: '2026-09-27T00:00:00Z',
+          updated_at: '2026-09-27T02:00:00Z',
+          deleted_at: null,
+          deleted_by: null
+        },
+        error: null
+      };
+    }
+  };
+
+  const updated = await publishGuideVersion({
+    guideId: 'WA-G01',
+    expectedVersionId: 'WA-G01:v1',
+    changeSummary: 'Updated step 1 with more details',
+    content: {
+      title: 'Updated Guide Title',
+      summary: 'Updated Guide Summary',
+      status: 'Verified',
+      steps: [{ title: 'Step 1', description: 'Improved instructions' }]
+    }
+  }, mockClient);
+
+  assert.equal(rpcMethod, 'fn_publish_guide_version');
+  assert.equal(rpcParams.p_guide_id, 'WA-G01');
+  assert.equal(rpcParams.p_expected_version_id, 'WA-G01:v1');
+  assert.equal(rpcParams.p_change_summary, 'Updated step 1 with more details');
+  assert.equal(rpcParams.p_content.title, 'Updated Guide Title');
+  assert.equal(updated.id, 'WA-G01');
+  assert.equal(updated.currentVersionId, 'WA-G01:v2');
+  assert.equal(updated.versionNumber, 2);
+});
+
+test('publishGuideVersion translates stale-version optimistic concurrency error cleanly', async () => {
+  const { publishGuideVersion } = await importTs('src/services/guideService.ts', 'guide-service');
+
+  const mockClient = {
+    rpc: async () => ({
+      data: null,
+      error: { message: 'This Guide was updated elsewhere. Reopen the current Guide before publishing. Your changes have not been saved.' }
+    })
+  };
+
+  await assert.rejects(
+    () => publishGuideVersion({
+      guideId: 'WA-G01',
+      expectedVersionId: 'WA-G01:v1',
+      content: { title: 'T', summary: 'S', steps: [{ title: 'Step', description: 'Desc' }] }
+    }, mockClient),
+    /This Guide was updated elsewhere\. Reopen the current Guide before publishing\. Your changes have not been saved\./
+  );
+});
+
+test('restoreGuideVersion validates required fields before making RPC call', async () => {
+  const { restoreGuideVersion } = await importTs('src/services/guideService.ts', 'guide-service');
+  const mockClient = {};
+
+  await assert.rejects(
+    () => restoreGuideVersion({ guideId: '', targetVersionId: 'WA-G01:v1', expectedVersionId: 'WA-G01:v2' }, mockClient),
+    /Guide ID is required/
+  );
+
+  await assert.rejects(
+    () => restoreGuideVersion({ guideId: 'WA-G01', targetVersionId: '', expectedVersionId: 'WA-G01:v2' }, mockClient),
+    /Target version ID is required/
+  );
+
+  await assert.rejects(
+    () => restoreGuideVersion({ guideId: 'WA-G01', targetVersionId: 'WA-G01:v1', expectedVersionId: '' }, mockClient),
+    /Expected version ID is required/
+  );
+});
+
+test('restoreGuideVersion invokes fn_restore_guide_version RPC with exact parameters', async () => {
+  const { restoreGuideVersion } = await importTs('src/services/guideService.ts', 'guide-service');
+
+  let rpcMethod = '';
+  let rpcParams = null;
+
+  const mockClient = {
+    rpc: async (fn, params) => {
+      rpcMethod = fn;
+      rpcParams = params;
+      return {
+        data: {
+          id: params.p_guide_id,
+          issue_id: 'WA-001',
+          playbook_id: 'whatsapp',
+          current_version_id: 'WA-G01:v3',
+          version_number: 3,
+          title: 'Historical Title Restored',
+          summary: 'Historical Summary Restored',
+          status: 'Verified',
+          difficulty: 'Medium',
+          estimated_time: '15 min',
+          steps: [{ number: 1, title: 'Original Step 1', description: 'Original instructions' }],
+          author: 'Development Support',
+          created_by: 'Development Support',
+          updated_by: 'Development Support',
+          created_at: '2026-09-27T00:00:00Z',
+          updated_at: '2026-09-27T03:00:00Z',
+          deleted_at: null,
+          deleted_by: null
+        },
+        error: null
+      };
+    }
+  };
+
+  const restored = await restoreGuideVersion({
+    guideId: 'WA-G01',
+    targetVersionId: 'WA-G01:v1',
+    expectedVersionId: 'WA-G01:v2'
+  }, mockClient);
+
+  assert.equal(rpcMethod, 'fn_restore_guide_version');
+  assert.equal(rpcParams.p_guide_id, 'WA-G01');
+  assert.equal(rpcParams.p_target_version_id, 'WA-G01:v1');
+  assert.equal(rpcParams.p_expected_version_id, 'WA-G01:v2');
+  assert.equal(restored.id, 'WA-G01');
+  assert.equal(restored.currentVersionId, 'WA-G01:v3');
+  assert.equal(restored.versionNumber, 3);
+  assert.equal(restored.title, 'Historical Title Restored');
+});
+
+test('restoreGuideVersion translates optimistic concurrency and business validation errors cleanly', async () => {
+  const { restoreGuideVersion } = await importTs('src/services/guideService.ts', 'guide-service');
+
+  const staleClient = {
+    rpc: async () => ({
+      data: null,
+      error: { message: 'This Guide was updated elsewhere. Reopen the current Guide before publishing. Your changes have not been saved.' }
+    })
+  };
+
+  await assert.rejects(
+    () => restoreGuideVersion({
+      guideId: 'WA-G01',
+      targetVersionId: 'WA-G01:v1',
+      expectedVersionId: 'WA-G01:v2'
+    }, staleClient),
+    /This Guide was updated elsewhere\. Reopen the current Guide before publishing\. Your changes have not been saved\./
+  );
+
+  const alreadyCurrentClient = {
+    rpc: async () => ({
+      data: null,
+      error: { message: 'This version is already current.' }
+    })
+  };
+
+  await assert.rejects(
+    () => restoreGuideVersion({
+      guideId: 'WA-G01',
+      targetVersionId: 'WA-G01:v2',
+      expectedVersionId: 'WA-G01:v2'
+    }, alreadyCurrentClient),
+    /This version is already current\./
+  );
+});

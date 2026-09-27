@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../lib/supabase';
-import type { VersionedGuide, Step, CommonProblem, FAQ, Revision } from '../data';
+import type { VersionedGuide, Step, CommonProblem, FAQ, Revision, GuideVersion } from '../data';
 
 export interface DatabaseGuideRow {
   id: string;
@@ -35,6 +35,33 @@ export interface DatabaseGuideRow {
   updated_at: string;
 }
 
+export interface DatabaseGuideVersionRow {
+  id: string;
+  guide_id: string;
+  version_number: number;
+  change_summary: string;
+  title: string;
+  summary: string;
+  status: 'Verified' | 'Draft';
+  difficulty: 'Easy' | 'Medium' | 'Advanced';
+  estimated_time: string;
+  before_you_start: string[] | null;
+  requirements: string[] | null;
+  important_information: string | null;
+  video: string | null;
+  video_storage_key: string | null;
+  pdf: string | null;
+  pdf_storage_key: string | null;
+  steps: Step[] | null;
+  common_problems: CommonProblem[] | null;
+  faq: FAQ[] | null;
+  related_items: string[] | null;
+  internal_notes: string | null;
+  created_at: string;
+  created_by: string;
+  restored_from_version_id: string | null;
+}
+
 export interface CreateGuideInput {
   issueId: string;
   playbookId: string;
@@ -55,6 +82,37 @@ export interface CreateGuideInput {
   faq?: FAQ[];
   relatedItems?: string[];
   internalNotes?: string;
+}
+
+export interface PublishGuideVersionInput {
+  guideId: string;
+  expectedVersionId: string;
+  changeSummary?: string;
+  content: {
+    title: string;
+    summary: string;
+    status?: 'Verified' | 'Draft';
+    difficulty?: 'Easy' | 'Medium' | 'Advanced';
+    estimatedTime?: string;
+    beforeYouStart?: string[];
+    requirements?: string[];
+    importantInformation?: string;
+    video?: string;
+    videoStorageKey?: string;
+    pdf?: string;
+    pdfStorageKey?: string;
+    steps: Array<Omit<Step, 'number'>> | Step[];
+    commonProblems?: CommonProblem[];
+    faq?: FAQ[];
+    relatedItems?: string[];
+    internalNotes?: string;
+  };
+}
+
+export interface RestoreGuideVersionInput {
+  guideId: string;
+  targetVersionId: string;
+  expectedVersionId: string;
 }
 
 export function mapGuideRowToGuide(row: DatabaseGuideRow): VersionedGuide {
@@ -85,6 +143,33 @@ export function mapGuideRowToGuide(row: DatabaseGuideRow): VersionedGuide {
     updatedBy: row.updated_by || row.author || 'Support Team',
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  };
+}
+
+export function mapGuideVersionRowToVersion(row: DatabaseGuideVersionRow): GuideVersion {
+  return {
+    id: row.id,
+    guideId: row.guide_id,
+    versionNumber: row.version_number,
+    changeSummary: row.change_summary || '',
+    title: row.title,
+    summary: row.summary,
+    status: row.status,
+    difficulty: row.difficulty,
+    estimatedTime: row.estimated_time || '15 min',
+    beforeYouStart: Array.isArray(row.before_you_start) ? row.before_you_start : [],
+    requirements: Array.isArray(row.requirements) ? row.requirements : [],
+    importantInformation: row.important_information || '',
+    video: row.video || '',
+    pdf: row.pdf || '',
+    steps: Array.isArray(row.steps) ? row.steps : [],
+    commonProblems: Array.isArray(row.common_problems) ? row.common_problems : [],
+    faq: Array.isArray(row.faq) ? row.faq : [],
+    relatedItems: Array.isArray(row.related_items) ? row.related_items : [],
+    internalNotes: row.internal_notes || '',
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    restoredFromVersionId: row.restored_from_version_id || undefined
   };
 }
 
@@ -185,6 +270,29 @@ export async function getPrimaryGuideByIssue(
   return data ? mapGuideRowToGuide(data) : null;
 }
 
+export async function listGuideVersions(
+  guideId: string,
+  client: SupabaseClient = defaultSupabase
+): Promise<GuideVersion[]> {
+  const cleanId = guideId.trim();
+  if (!cleanId) return [];
+
+  const { data, error } = await client
+    .from('guide_versions')
+    .select('*')
+    .eq('guide_id', cleanId)
+    .order('version_number', { ascending: false });
+
+  if (error) {
+    if (error.code === '42501') {
+      throw new Error('Permission denied. Please verify your account role.');
+    }
+    throw new Error(`Failed to load Guide versions: ${error.message}`);
+  }
+
+  return (data || []).map(mapGuideVersionRowToVersion);
+}
+
 export async function createGuide(
   input: CreateGuideInput,
   client: SupabaseClient = defaultSupabase
@@ -271,6 +379,146 @@ export async function createGuide(
 
   if (!data) {
     throw new Error('Failed to create Guide: No data returned from database.');
+  }
+
+  return mapGuideRowToGuide(data as DatabaseGuideRow);
+}
+
+export async function publishGuideVersion(
+  input: PublishGuideVersionInput,
+  client: SupabaseClient = defaultSupabase
+): Promise<VersionedGuide> {
+  const guideId = input.guideId?.trim();
+  const expectedVersionId = input.expectedVersionId?.trim();
+  const title = input.content.title?.trim();
+  const summary = input.content.summary?.trim();
+
+  if (!guideId) {
+    throw new Error('Guide ID is required.');
+  }
+
+  if (!expectedVersionId) {
+    throw new Error('Expected version ID is required.');
+  }
+
+  if (!title || !summary || !input.content.steps?.length) {
+    throw new Error('Add a Guide title, summary, and complete solution steps.');
+  }
+
+  for (const step of input.content.steps) {
+    if (!step.title?.trim() || !step.description?.trim()) {
+      throw new Error('Add a Guide title, summary, and complete solution steps.');
+    }
+  }
+
+  const contentPayload = {
+    title,
+    summary,
+    status: input.content.status || 'Draft',
+    difficulty: input.content.difficulty || 'Medium',
+    estimatedTime: input.content.estimatedTime?.trim() || '15 min',
+    beforeYouStart: input.content.beforeYouStart?.map(s => s.trim()).filter(Boolean) || [],
+    requirements: input.content.requirements || [],
+    importantInformation: input.content.importantInformation?.trim() || '',
+    video: input.content.video?.trim() || '',
+    videoStorageKey: input.content.videoStorageKey?.trim() || null,
+    pdf: input.content.pdf?.trim() || '',
+    pdfStorageKey: input.content.pdfStorageKey?.trim() || null,
+    steps: input.content.steps.map((s, i) => ({
+      number: i + 1,
+      title: s.title.trim(),
+      description: s.description.trim(),
+      screenshot: 'screenshot' in s ? s.screenshot : undefined
+    })),
+    commonProblems: (input.content.commonProblems || [])
+      .filter(p => p.problem.trim())
+      .map(p => ({
+        problem: p.problem.trim(),
+        cause: p.cause.trim(),
+        solution: p.solution.trim()
+      })),
+    faq: input.content.faq || [],
+    relatedItems: input.content.relatedItems || [],
+    internalNotes: input.content.internalNotes?.trim() || ''
+  };
+
+  const { data, error } = await client.rpc('fn_publish_guide_version', {
+    p_guide_id: guideId,
+    p_content: contentPayload,
+    p_expected_version_id: expectedVersionId,
+    p_change_summary: input.changeSummary?.trim() || 'Guide updated'
+  });
+
+  if (error) {
+    if (error.message?.includes('This Guide was updated elsewhere')) {
+      throw new Error('This Guide was updated elsewhere. Reopen the current Guide before publishing. Your changes have not been saved.');
+    }
+    if (error.code === '42501' || error.message?.includes('Permission denied')) {
+      throw new Error('Permission denied. Support or Admin role required.');
+    }
+    if (error.message?.includes('Guide not found')) {
+      throw new Error('Guide not found.');
+    }
+    if (error.message?.includes('complete solution steps')) {
+      throw new Error('Add a Guide title, summary, and complete solution steps.');
+    }
+    throw new Error(error.message || 'Failed to publish Guide update.');
+  }
+
+  if (!data) {
+    throw new Error('Failed to publish Guide update: No data returned from database.');
+  }
+
+  return mapGuideRowToGuide(data as DatabaseGuideRow);
+}
+
+export async function restoreGuideVersion(
+  input: RestoreGuideVersionInput,
+  client: SupabaseClient = defaultSupabase
+): Promise<VersionedGuide> {
+  const guideId = input.guideId?.trim();
+  const targetVersionId = input.targetVersionId?.trim();
+  const expectedVersionId = input.expectedVersionId?.trim();
+
+  if (!guideId) {
+    throw new Error('Guide ID is required.');
+  }
+
+  if (!targetVersionId) {
+    throw new Error('Target version ID is required.');
+  }
+
+  if (!expectedVersionId) {
+    throw new Error('Expected version ID is required.');
+  }
+
+  const { data, error } = await client.rpc('fn_restore_guide_version', {
+    p_guide_id: guideId,
+    p_target_version_id: targetVersionId,
+    p_expected_version_id: expectedVersionId
+  });
+
+  if (error) {
+    if (error.message?.includes('This Guide was updated elsewhere')) {
+      throw new Error('This Guide was updated elsewhere. Reopen the current Guide before publishing. Your changes have not been saved.');
+    }
+    if (error.code === '42501' || error.message?.includes('Permission denied')) {
+      throw new Error('Permission denied. Support or Admin role required.');
+    }
+    if (error.message?.includes('This version is already current')) {
+      throw new Error('This version is already current.');
+    }
+    if (error.message?.includes('Historical version not found')) {
+      throw new Error('Historical version not found.');
+    }
+    if (error.message?.includes('Guide not found')) {
+      throw new Error('Guide not found.');
+    }
+    throw new Error(error.message || 'Failed to restore Guide version.');
+  }
+
+  if (!data) {
+    throw new Error('Failed to restore Guide version: No data returned from database.');
   }
 
   return mapGuideRowToGuide(data as DatabaseGuideRow);
