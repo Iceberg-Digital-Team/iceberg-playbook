@@ -1,0 +1,197 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabase as defaultSupabase } from '../lib/supabase';
+import type { Playbook } from '../data';
+import { toSlug } from '../slug';
+
+export interface DatabasePlaybookRow {
+  id: string;
+  slug: string;
+  name: string;
+  code: string;
+  description: string;
+  icon: string | null;
+  owner: string | null;
+  visibility: 'Internal' | 'Public' | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+  deleted_by: string | null;
+}
+
+export interface CreatePlaybookInput {
+  name: string;
+  code: string;
+  description: string;
+  icon?: string;
+  owner?: string;
+  visibility?: 'Internal' | 'Public';
+  slug?: string;
+  id?: string;
+}
+
+export function mapPlaybookRowToPlaybook(row: DatabasePlaybookRow): Playbook {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    code: row.code,
+    description: row.description || '',
+    icon: row.icon || 'MessageSquare',
+    owner: row.owner || 'Support Team',
+    visibility: (row.visibility as 'Internal' | 'Public') || 'Internal',
+    updatedAt: row.updated_at || new Date().toISOString(),
+    issueCount: 0,
+    guideCount: 0,
+    sopCount: 0,
+  };
+}
+
+export async function listPlaybooks(
+  client: SupabaseClient = defaultSupabase
+): Promise<Playbook[]> {
+  const { data, error } = await client
+    .from('playbooks')
+    .select('id, slug, name, code, description, icon, owner, visibility, created_at, updated_at, deleted_at, deleted_by')
+    .is('deleted_at', null)
+    .order('name', { ascending: true });
+
+  if (error) {
+    if (error.code === '42501') {
+      throw new Error('Permission denied. Please verify your account role.');
+    }
+    throw new Error(`Failed to load Playbooks: ${error.message}`);
+  }
+
+  return (data || []).map(mapPlaybookRowToPlaybook);
+}
+
+export async function getPlaybookBySlug(
+  slug: string,
+  client: SupabaseClient = defaultSupabase
+): Promise<Playbook | null> {
+  const cleanSlug = slug.trim();
+  if (!cleanSlug) {
+    return null;
+  }
+
+  const { data, error } = await client
+    .from('playbooks')
+    .select('id, slug, name, code, description, icon, owner, visibility, created_at, updated_at, deleted_at, deleted_by')
+    .eq('slug', cleanSlug)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === '42501') {
+      throw new Error('Permission denied. Please verify your account role.');
+    }
+    throw new Error(`Failed to load Playbook: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return mapPlaybookRowToPlaybook(data);
+}
+
+export async function createPlaybook(
+  input: CreatePlaybookInput,
+  client: SupabaseClient = defaultSupabase
+): Promise<Playbook> {
+  const trimmedName = input.name.trim();
+  const trimmedCode = input.code.trim().toUpperCase();
+  const trimmedDescription = input.description.trim();
+  const slug = input.slug?.trim() || toSlug(trimmedName);
+
+  if (!trimmedName || !slug) {
+    throw new Error('Enter a valid Playbook name.');
+  }
+
+  if (!trimmedCode) {
+    throw new Error('Enter a code prefix.');
+  }
+
+  if (trimmedCode.length < 2 || trimmedCode.length > 5 || !/^[A-Z0-9]{2,5}$/.test(trimmedCode)) {
+    throw new Error('Code prefix must be 2 to 5 alphanumeric characters (A-Z, 0-9).');
+  }
+
+  if (!trimmedDescription) {
+    throw new Error('Enter a description.');
+  }
+
+  // Pre-insert uniqueness verification
+  const [codeCheck, slugCheck, nameCheck] = await Promise.all([
+    client.from('playbooks').select('id').eq('code', trimmedCode).is('deleted_at', null).maybeSingle(),
+    client.from('playbooks').select('id').eq('slug', slug).is('deleted_at', null).maybeSingle(),
+    client.from('playbooks').select('id').ilike('name', trimmedName).is('deleted_at', null).maybeSingle(),
+  ]);
+
+  if (codeCheck.data) {
+    throw new Error('A Playbook with this code prefix already exists. Choose another.');
+  }
+  if (slugCheck.data || nameCheck.data) {
+    throw new Error('A Playbook with this name already exists. Choose another.');
+  }
+
+  const id = input.id?.trim() || slug;
+  const insertPayload = {
+    id,
+    slug,
+    name: trimmedName,
+    code: trimmedCode,
+    description: trimmedDescription,
+    icon: input.icon || 'MessageSquare',
+    owner: input.owner?.trim() || 'Support Team',
+    visibility: input.visibility || 'Internal',
+  };
+
+  const { data, error } = await client
+    .from('playbooks')
+    .insert(insertPayload)
+    .select('id, slug, name, code, description, icon, owner, visibility, created_at, updated_at, deleted_at, deleted_by')
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('code')) {
+        throw new Error('A Playbook with this code prefix already exists. Choose another.');
+      }
+      throw new Error('A Playbook with this name already exists. Choose another.');
+    }
+    if (error.code === '23514') {
+      throw new Error('Code prefix must be 2 to 5 alphanumeric characters (A-Z, 0-9).');
+    }
+    if (error.code === '42501') {
+      throw new Error('Permission denied. Support or Admin role required to create Playbooks.');
+    }
+    throw new Error(error.message || 'Could not create Playbook.');
+  }
+
+  return mapPlaybookRowToPlaybook(data);
+}
+
+export async function softDeletePlaybook(
+  id: string,
+  client: SupabaseClient = defaultSupabase
+): Promise<void> {
+  const cleanId = id.trim();
+  if (!cleanId) {
+    throw new Error('Invalid Playbook ID.');
+  }
+
+  const { error } = await client.rpc('fn_soft_delete_playbook', {
+    p_playbook_id: cleanId,
+  });
+
+  if (error) {
+    if (error.message.includes('contains content')) {
+      throw new Error('This Playbook contains content and cannot be deleted.');
+    }
+    if (error.code === '42501' || error.message.includes('Permission denied')) {
+      throw new Error('Permission denied. Support or Admin role required.');
+    }
+    throw new Error(error.message || 'Could not delete Playbook.');
+  }
+}
