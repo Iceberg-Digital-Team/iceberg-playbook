@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, ArrowRight, MessageSquare, Briefcase, Home as HomeIcon, Video, Mic, Globe, type LucideIcon } from 'lucide-react';
 import { useRouter } from '../router';
-import { getPlaybooks, getIssues, getGuides, getSOPs } from '../data';
+import { getPlaybooks, getIssues, getGuides, getSOPs, type Playbook } from '../data';
+import { listPlaybooks } from '../services/playbookService';
 import './Home.css';
 
 const iconMap: Record<string, LucideIcon> = { MessageSquare, Briefcase, Home: HomeIcon, Video, Mic, Globe };
@@ -10,13 +11,37 @@ interface HomeProps { onSearchTrigger: (query: string) => void; }
 export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
   const { navigate } = useRouter();
   const [query, setQuery] = useState('');
-  const playbooks = getPlaybooks();
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    listPlaybooks()
+      .then(items => {
+        if (active) {
+          setPlaybooks(items);
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setError(err instanceof Error ? err.message : 'Unable to load Playbooks.');
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const legacyPlaybooks = getPlaybooks();
   const recentItems = [
     ...getIssues().map(item => ({ ...item, type: 'Issue', folder: 'issues' })),
     ...getGuides().map(item => ({ ...item, type: 'Guide', folder: 'guides' })),
     ...getSOPs().map(item => ({ ...item, type: 'SOP', folder: 'sops' })),
   ]
-    .filter(item => item.status === 'Verified' && playbooks.some(pb => pb.id === item.playbookId))
+    .filter(item => item.status === 'Verified' && legacyPlaybooks.some(pb => pb.id === item.playbookId))
     .sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
     .slice(0, 4);
 
@@ -46,22 +71,30 @@ export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
           <h2 id="home-playbooks-title">Playbooks</h2>
           <a href="#/playbooks">View all <ArrowRight size={15} aria-hidden="true" /></a>
         </div>
-        {playbooks.length ? <div className="home-playbooks">
-          {playbooks.slice(0, 4).map(pb => {
-            const Icon = iconMap[pb.icon] || MessageSquare;
-            return <a key={pb.id} className="home-playbook" href={`#/playbooks/${pb.slug}`}>
-              <span className="home-playbook-icon"><Icon size={21} strokeWidth={1.5} aria-hidden="true" /></span>
-              <span>{pb.name}</span>
-              <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
-            </a>;
-          })}
-        </div> : <p className="home-empty">Your team’s playbooks will appear here. <a href="#/create/playbook">Create a playbook</a></p>}
+        {loading ? (
+          <p className="home-empty">Loading playbooks…</p>
+        ) : error ? (
+          <p className="home-empty" role="alert">{error}</p>
+        ) : playbooks.length ? (
+          <div className="home-playbooks">
+            {playbooks.slice(0, 4).map(pb => {
+              const Icon = iconMap[pb.icon] || MessageSquare;
+              return <a key={pb.id} className="home-playbook" href={`#/playbooks/${pb.slug}`}>
+                <span className="home-playbook-icon"><Icon size={21} strokeWidth={1.5} aria-hidden="true" /></span>
+                <span>{pb.name}</span>
+                <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
+              </a>;
+            })}
+          </div>
+        ) : (
+          <p className="home-empty">Your team’s playbooks will appear here. <a href="#/create/playbook">Create a playbook</a></p>
+        )}
       </section>
       <section className="home-recent" aria-labelledby="home-recent-title">
         <div className="home-section-heading"><h2 id="home-recent-title">Recent solutions</h2></div>
         {recentItems.length ? <ul className="home-solutions">
           {recentItems.map(item => {
-            const pb = playbooks.find(book => book.id === item.playbookId)!;
+            const pb = legacyPlaybooks.find(book => book.id === item.playbookId)!;
             return <li key={`${item.folder}-${item.id}`}>
               <a className="home-solution" href={`#/playbooks/${pb.slug}/${item.folder}/${encodeURIComponent(item.id)}`}>
                 <span className="home-solution-code">{item.id}</span>
