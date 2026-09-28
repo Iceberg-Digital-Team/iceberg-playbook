@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from '../router';
-import type { Playbook, Issue, VersionedGuide } from '../data';
+import type { Playbook, Issue, VersionedGuide, SOP } from '../data';
 import { getPlaybookBySlug } from '../services/playbookService';
 import { listIssuesByPlaybook } from '../services/issueService';
 import { listGuidesByPlaybook } from '../services/guideService';
-import { getSOPs } from '../data';
+import { listSopsByPlaybook } from '../services/sopService';
 import { PageHeader, SearchField, ContentRow, StateMessage, type ContentItem } from '../components/knowledge/ApplicationUI';
 
 export function PlaybookDetail() {
@@ -17,6 +17,7 @@ export function PlaybookDetail() {
   const [pb, setPb] = useState<Playbook | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [guides, setGuides] = useState<VersionedGuide[]>([]);
+  const [sops, setSops] = useState<SOP[]>([]);
   const [loading, setLoading] = useState(Boolean(params.slug));
   const [error, setError] = useState<string | null>(null);
 
@@ -31,13 +32,15 @@ export function PlaybookDetail() {
         setPb(item);
         if (item) {
           try {
-            const [pbIssues, pbGuides] = await Promise.all([
+            const [pbIssues, pbGuides, pbSops] = await Promise.all([
               listIssuesByPlaybook(item.id),
-              listGuidesByPlaybook(item.id)
+              listGuidesByPlaybook(item.id),
+              listSopsByPlaybook(item.id)
             ]);
             if (active) {
               setIssues(pbIssues);
               setGuides(pbGuides);
+              setSops(pbSops);
             }
           } catch (contentErr) {
             console.error('Failed to load playbook content:', contentErr);
@@ -96,8 +99,6 @@ export function PlaybookDetail() {
       </StateMessage>
     );
   }
-
-  const sops = getSOPs().filter(i => i.playbookId === pb.id);
 
   const filter = (items: ContentItem[]) =>
     items.filter(

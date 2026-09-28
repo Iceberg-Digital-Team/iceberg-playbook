@@ -23,6 +23,9 @@ export function parseHash(hash: string): RouteState {
   const editMatch = path.match(/^\/guides\/([^/]+)\/edit$/);
   if (editMatch) return { path: '/guides/[id]/edit', params: { id: decodeURIComponent(editMatch[1]) } };
 
+  const sopEditMatch = path.match(/^\/sops\/([^/]+)\/edit$/);
+  if (sopEditMatch) return { path: '/sops/[id]/edit', params: { id: decodeURIComponent(sopEditMatch[1]) } };
+
   // 1. Matches: /playbooks/[slug]/issues/[id]
   const issueMatch = path.match(/^\/playbooks\/([^/]+)\/issues\/([^/]+)$/);
   if (issueMatch) {

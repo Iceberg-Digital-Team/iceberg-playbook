@@ -106,7 +106,9 @@ function WorkspaceApp() {
       case '/guides/[id]/edit':
         return <CreateGuide key={window.location.hash} />;
       case '/create/sop':
-        return <CreateSOP />;
+        return <CreateSOP key="create-sop" />;
+      case '/sops/[id]/edit':
+        return <CreateSOP key={window.location.hash} />;
       case '/create/playbook':
         return <CreatePlaybook />;
       case '/settings':
