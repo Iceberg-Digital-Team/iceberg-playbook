@@ -68,7 +68,6 @@ export function parseHash(hash: string): RouteState {
     '/forgot-password',
     '/playbooks',
     '/search',
-    '/troubleshooting',
     '/create',
     '/create/issue',
     '/create/guide',

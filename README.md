@@ -185,7 +185,6 @@ The project is currently transitioning from the frontend prototype stage to back
 - Guide pages
 - SOP pages
 - Search interface
-- Troubleshooting flow
 - Create Issue
 - Create Guide
 - Create SOP

@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { importTs } from './helpers/transpile.mjs';
 
+process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://dummy.supabase.co';
+process.env.VITE_SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'dummy-anon-key-for-unit-tests';
+
 // Search runs against isolated in-memory storage, never the user's records.
 const storage = new Map();
 globalThis.localStorage = {
@@ -211,135 +214,39 @@ test('real data (R-07): Guide results are unique and come only from current getG
     assert.deepEqual(resultIds, expected);
 });
 
-// Troubleshooting
+test('Troubleshooting route is removed from router and falls back to root', async () => {
+    const { parseHash } = await importTs('src/router.ts', 'router-test');
+    const route = parseHash('#/troubleshooting');
+    assert.equal(route.path, '/', 'navigating to #/troubleshooting should fall back to root');
+    assert.deepEqual(route.params, {});
+});
 
-const tsMatch = (playbookId, category, symptom, issues) =>
-    core.matchTroubleshootingIssue(playbookId, category, symptom, issues)?.id ?? null;
-const genericSymptoms = ['Integration fails to trigger', 'Sync lag or delay', 'Configuration error', 'Unknown error code'];
-// Independent of the implementation's stopword list: any returned Issue must contain every long word of the symptom.
-const longWords = s => s.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+test('no resolveTroubleshooting or matchTroubleshootingIssue runtime exports exist', async () => {
+    assert.equal(typeof core.matchTroubleshootingIssue, 'undefined', 'matchTroubleshootingIssue must be removed from searchCore');
+    assert.equal(typeof core.TROUBLESHOOTING_STOPWORDS, 'undefined', 'TROUBLESHOOTING_STOPWORDS must be removed from searchCore');
 
-test('troubleshooting real data: each listed symptom reaches its sample Issue through symptom matching', () => {
+    const searchService = await importTs('src/search/searchService.ts', 'search-service');
+    assert.equal(typeof searchService.resolveTroubleshooting, 'undefined', 'resolveTroubleshooting must be removed from searchService');
+});
+
+test('sidebar navigation does not contain troubleshooting entry or dead links', () => {
+    const sidebarSource = readFileSync(new URL('../src/components/layout/Sidebar.tsx', import.meta.url), 'utf8');
+    assert.ok(!sidebarSource.includes('/troubleshooting'), 'Sidebar must not contain /troubleshooting route');
+    assert.ok(!sidebarSource.includes('Troubleshooting'), 'Sidebar must not contain Troubleshooting label');
+    assert.ok(!sidebarSource.includes('HelpCircle'), 'Sidebar must not import HelpCircle');
+});
+
+test('Search domains strictly remain Playbook, Issue, Guide, and SOP only', () => {
     loadSample();
-    const issues = data.getIssues();
-    const cases = [
-        ['whatsapp', 'Phone Number', 'Number already registered', 'WA-001'],
-        ['whatsapp', 'Phone Number', 'OTP not received', 'WA-002'],
-        ['whatsapp', 'Embedded Signup', 'Popup closes abruptly', 'WA-003'],
-        ['whatsapp', 'Embedded Signup', 'Blank window displays', 'WA-003'],
-        ['meta-business', 'Business Verification', 'Document rejected', 'META-006'],
-    ];
-    for (const [pb, cat, sym, expected] of cases) {
-        assert.equal(tsMatch(pb, cat, sym, issues), expected, `${pb} / ${cat} / ${sym}`);
+    const d = realData();
+    const results = core.searchKnowledge('', d);
+    const validDomains = new Set(['Playbook', 'Issue', 'Guide', 'SOP']);
+    for (const item of results) {
+        let domain = 'Playbook';
+        if ('symptoms' in item) domain = 'Issue';
+        else if ('steps' in item && 'currentVersionId' in item) domain = 'Guide';
+        else if ('purpose' in item) domain = 'SOP';
+        assert.ok(validDomains.has(domain), `Search result ${item.id} has invalid domain ${domain}`);
     }
 });
-
-test('troubleshooting (1.3): Zoom/Meetings generic symptoms return null, never ZOOM-002', () => {
-    const zoom = [issue({ id: 'ZOOM-002', playbookId: 'zoom', title: 'Meeting link expired', symptoms: ['Meeting link expired'] })];
-    for (const s of genericSymptoms) assert.equal(tsMatch('zoom', 'Meetings', s, zoom), null, `synthetic / ${s}`);
-
-    loadSample();
-    const issues = data.getIssues();
-    assert.ok(issues.some(i => i.id === 'ZOOM-002' && i.playbookId === 'zoom'), 'seed ZOOM-002 must exist for this test to mean anything');
-    for (const s of genericSymptoms) assert.equal(tsMatch('zoom', 'Meetings', s, issues), null, `real / ${s}`);
-});
-
-test('troubleshooting (1.3): Zoom/Meetings falls through to normal matching when every word is present', () => {
-    const zoom = [
-        issue({ id: 'ZOOM-002', playbookId: 'zoom', title: 'Meeting link expired' }),
-        issue({ id: 'ZOOM-009', playbookId: 'zoom', title: 'Meeting not starting', symptoms: ['Meeting not starting'] }),
-    ];
-    assert.equal(tsMatch('zoom', 'Meetings', 'Meeting not starting', zoom), 'ZOOM-009');
-});
-
-test('troubleshooting: an Issue code from another Playbook or no matching Issue returns null; a same-Playbook symptom match is returned', () => {
-    const unrelated = [issue({ id: 'WA-009', playbookId: 'whatsapp', title: 'Unrelated webhook' })];
-    assert.doesNotThrow(() => tsMatch('whatsapp', 'Phone Number', 'Number already registered', unrelated));
-    assert.equal(tsMatch('whatsapp', 'Phone Number', 'Number already registered', unrelated), null);
-
-    const crossPlaybook = [issue({ id: 'WA-001', playbookId: 'zoom', title: 'Number already registered' }), ...unrelated];
-    assert.equal(tsMatch('whatsapp', 'Phone Number', 'Number already registered', crossPlaybook), null);
-
-    const withFallback = [...crossPlaybook, issue({ id: 'WA-050', playbookId: 'whatsapp', title: 'Number already registered on another app' })];
-    assert.equal(tsMatch('whatsapp', 'Phone Number', 'Number already registered', withFallback), 'WA-050');
-});
-
-test('troubleshooting: Playbook without Issues and incomplete selections return null', () => {
-    const zoomOnly = [issue({ id: 'Z-1', playbookId: 'zoom', title: 'Configuration error on SSO' })];
-    assert.equal(tsMatch('lifesycle', 'Webhooks', 'Configuration error', []), null);
-    assert.equal(tsMatch('lifesycle', 'Webhooks', 'Configuration error', zoomOnly), null);
-    assert.equal(tsMatch('', 'Webhooks', 'Configuration error', zoomOnly), null);
-    assert.equal(tsMatch('zoom', '', 'Configuration error', zoomOnly), null);
-    assert.equal(tsMatch('zoom', 'SSO', '', zoomOnly), null);
-});
-
-test('troubleshooting: an Issue from another Playbook is never suggested', () => {
-    const zoomOnly = [issue({ id: 'Z-1', playbookId: 'zoom', title: 'Configuration error on SSO' })];
-    assert.equal(tsMatch('whatsapp', 'Account', 'Configuration error', zoomOnly), null);
-    assert.equal(tsMatch('zoom', 'SSO', 'Configuration error', zoomOnly), 'Z-1');
-});
-
-test('troubleshooting (R-01): unrelated symptom never falls back to the first Issue of the Playbook', () => {
-    const life = [issue({ id: 'LIFE-003', playbookId: 'lifesycle', title: 'Property Matching fails', symptoms: ['Property Matching fails'] })];
-    const wa = [issue({ id: 'WA-001', playbookId: 'whatsapp', title: 'Number already registered', symptoms: ['Number already registered'] })];
-    for (const s of genericSymptoms) {
-        assert.equal(tsMatch('lifesycle', 'Webhooks', s, life), null, `lifesycle / ${s}`);
-        assert.equal(tsMatch('whatsapp', 'Templates', s, wa), null, `whatsapp / ${s}`);
-    }
-});
-
-test('troubleshooting (R-01) real data: Lifesycle/Webhooks never gives LIFE-003 and WhatsApp/Templates never gives WA-001', () => {
-    loadSample();
-    const issues = data.getIssues();
-    assert.ok(issues.some(i => i.id === 'LIFE-003' && i.playbookId === 'lifesycle'), 'seed LIFE-003 must exist for this test to mean anything');
-    for (const [pb, cat, forbidden] of [['lifesycle', 'Webhooks', 'LIFE-003'], ['whatsapp', 'Templates', 'WA-001']]) {
-        for (const s of genericSymptoms) {
-            const result = core.matchTroubleshootingIssue(pb, cat, s, issues);
-            assert.notEqual(result?.id, forbidden, `${pb} / ${cat} / ${s}`);
-            if (result) {
-                assert.equal(result.playbookId, pb);
-                const text = `${result.title} ${(result.symptoms ?? []).join(' ')} ${result.errorMessage ?? ''}`.toLowerCase();
-                for (const w of longWords(s)) assert.ok(text.includes(w), `${result.id} is unrelated to "${s}"`);
-            }
-        }
-    }
-});
-
-test('troubleshooting: category word alone, "Other" and short or generic words never produce a match', () => {
-    const set = [
-        issue({ id: 'L-1', playbookId: 'lifesycle', title: 'Webhooks delivery broken' }),
-        issue({ id: 'L-2', playbookId: 'lifesycle', title: 'Other it is on the issue' }),
-    ];
-    assert.equal(tsMatch('lifesycle', 'Webhooks', 'Sync lag or delay', set), null);
-    assert.equal(tsMatch('lifesycle', 'Webhooks', 'Other', set), null);
-    assert.equal(tsMatch('lifesycle', 'Webhooks', '  other ', set), null);
-    assert.equal(tsMatch('lifesycle', 'Webhooks', 'it is on', set), null);
-    assert.equal(tsMatch('lifesycle', 'Webhooks', 'the issue', set), null);
-});
-
-test('troubleshooting: every meaningful symptom word must be present (AND)', () => {
-    const set = [
-        issue({ id: 'A', playbookId: 'zoom', title: 'Configuration mismatch' }),
-        issue({ id: 'B', playbookId: 'zoom', title: 'Unknown failure', errorMessage: 'error' }),
-    ];
-    assert.equal(tsMatch('zoom', 'SSO', 'Configuration error', set), null);
-    const withFull = [...set, issue({ id: 'C', playbookId: 'zoom', title: 'Configuration error on login' })];
-    assert.equal(tsMatch('zoom', 'SSO', 'Configuration error', withFull), 'C');
-});
-
-test('troubleshooting: symptom finds Issue without a manual rule; title beats symptoms, ties keep list order', () => {
-    const bySymptom = [
-        issue({ id: 'SYM', playbookId: 'whatsapp', title: 'Signup blocked', symptoms: ['Number already registered'] }),
-        issue({ id: 'TTL', playbookId: 'whatsapp', title: 'Number already registered' }),
-    ];
-    assert.equal(tsMatch('whatsapp', 'Account', 'Number already registered', bySymptom), 'TTL');
-    assert.equal(tsMatch('whatsapp', 'Account', 'Number already registered', [bySymptom[0]]), 'SYM');
-
-    const byError = [issue({ id: 'ERR', playbookId: 'whatsapp', title: 'Signup blocked', errorMessage: 'Number already registered' })];
-    assert.equal(tsMatch('whatsapp', 'Account', 'Number already registered', byError), 'ERR');
-
-    const t1 = issue({ id: 'T1', playbookId: 'whatsapp', title: 'Number already registered twice' });
-    const t2 = issue({ id: 'T2', playbookId: 'whatsapp', title: 'Number already registered again' });
-    assert.equal(tsMatch('whatsapp', 'Account', 'Number already registered', [t1, t2]), 'T1');
-    assert.equal(tsMatch('whatsapp', 'Account', 'Number already registered', [t2, t1]), 'T2');
-});
+

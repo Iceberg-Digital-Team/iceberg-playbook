@@ -11,7 +11,6 @@ import { IssueDetail } from './pages/IssueDetail';
 import { GuideDetail } from './pages/GuideDetail';
 import { SOPDetail } from './pages/SOPDetail';
 import { Search } from './pages/Search';
-import { Troubleshooting } from './pages/Troubleshooting';
 import { Create } from './pages/Create';
 import { CreateIssue } from './pages/CreateIssue';
 import { CreateGuide } from './pages/CreateGuide';
@@ -95,8 +94,6 @@ function WorkspaceApp() {
         return <SOPDetail />;
       case '/search':
         return <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
-      case '/troubleshooting':
-        return <Troubleshooting />;
       case '/create':
         return <Create />;
       case '/create/issue':
