@@ -1,5 +1,10 @@
-import { getPlaybooks, getIssues, getGuides, getSOPs } from '../data';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabase as defaultSupabase } from '../lib/supabase';
 import type { Playbook, Issue, VersionedGuide, SOP } from '../data';
+import { listPlaybooks } from '../services/playbookService';
+import { listIssues } from '../services/issueService';
+import { listGuides } from '../services/guideService';
+import { listSops } from '../services/sopService';
 
 export interface RawSearchData {
   issues: Issue[];
@@ -8,11 +13,20 @@ export interface RawSearchData {
   playbooks: Playbook[];
 }
 
-export function getSearchData(): RawSearchData {
+export async function getSearchData(
+  client: SupabaseClient = defaultSupabase
+): Promise<RawSearchData> {
+  const [playbooks, issues, guides, sops] = await Promise.all([
+    listPlaybooks(client),
+    listIssues(client),
+    listGuides(client),
+    listSops(client),
+  ]);
+
   return {
-    issues: getIssues(),
-    guides: getGuides(),
-    sops: getSOPs(),
-    playbooks: getPlaybooks(),
+    playbooks,
+    issues,
+    guides,
+    sops,
   };
 }

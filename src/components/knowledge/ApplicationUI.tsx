@@ -16,15 +16,62 @@ export function FormSection({ title, hint, children, optional = false, open = fa
   return optional ? <details className="form-section disclosure" open={open || undefined}><summary>{title}<span>Optional</span></summary>{body}</details> : <section className="form-section"><h2>{title}</h2>{body}</section>;
 }
 export type ContentItem = Issue | VersionedGuide | SOP;
-export function ContentRow({ item, excerpt = false, playbook }: { item: ContentItem; excerpt?: boolean; playbook?: Playbook }) {
+export type SearchRowItem = ContentItem | Playbook;
+
+function isPlaybook(item: SearchRowItem): item is Playbook {
+  return 'slug' in item && 'name' in item;
+}
+
+export function ContentRow({ item, excerpt = false, playbook }: { item: SearchRowItem; excerpt?: boolean; playbook?: Playbook }) {
+  if (isPlaybook(item)) {
+    return (
+      <a className="content-row" href={`#/playbooks/${item.slug}`}>
+        <span className="row-code">{item.code}</span>
+        <div className="row-content">
+          <div className="row-title">{item.name}</div>
+          <div className="row-meta">
+            <span>Playbook</span>
+            <span>{item.visibility || 'Internal'}</span>
+            <span>{item.owner}</span>
+            {item.updatedAt && <span>Updated {formatGuideDate(item.updatedAt)}</span>}
+          </div>
+          {excerpt && <p className="row-excerpt">{item.description}</p>}
+        </div>
+        <ArrowRight size={17} aria-hidden="true" />
+      </a>
+    );
+  }
+
   const pb = playbook || getPlaybooks().find(p => p.id === item.playbookId);
   const type = 'issueId' in item ? 'Guide' : 'owner' in item ? 'SOP' : 'Issue';
   const folder = type === 'Guide' ? 'guides' : type === 'SOP' ? 'sops' : 'issues';
   if (!pb) return null;
-  return <a className="content-row" href={`#/playbooks/${pb.slug}/${folder}/${encodeURIComponent(item.id)}`}>
-    <span className="row-code">{item.id}</span><div className="row-content"><div className="row-title">{item.title}</div>
-    <div className="row-meta"><span>{type}</span><span>{pb.name}</span>{'issueId' in item ? <><span>Solves {item.issueId}</span><span>v{formatGuideVersion(item.versionNumber)}</span></> : type === 'Issue' ? <span>{getSolutionState(item.id)}</span> : <span>{'owner' in item ? item.owner : ''}</span>}
-      {item.estimatedTime && <span>{item.estimatedTime}</span>}<span>{item.status}</span>{'difficulty' in item && <span>{item.difficulty}</span>}<span>Updated {formatGuideDate(item.updatedAt)}</span></div>
-    {excerpt && <p className="row-excerpt">{'summary' in item ? item.summary : item.purpose}</p>}</div><ArrowRight size={17} aria-hidden="true" />
-  </a>;
+  return (
+    <a className="content-row" href={`#/playbooks/${pb.slug}/${folder}/${encodeURIComponent(item.id)}`}>
+      <span className="row-code">{item.id}</span>
+      <div className="row-content">
+        <div className="row-title">{item.title}</div>
+        <div className="row-meta">
+          <span>{type}</span>
+          <span>{pb.name}</span>
+          {'issueId' in item ? (
+            <>
+              <span>Solves {item.issueId}</span>
+              <span>v{formatGuideVersion(item.versionNumber)}</span>
+            </>
+          ) : type === 'Issue' ? (
+            <span>{getSolutionState(item.id)}</span>
+          ) : (
+            <span>{'owner' in item ? item.owner : ''}</span>
+          )}
+          {item.estimatedTime && <span>{item.estimatedTime}</span>}
+          <span>{item.status}</span>
+          {'difficulty' in item && <span>{item.difficulty}</span>}
+          <span>Updated {formatGuideDate(item.updatedAt)}</span>
+        </div>
+        {excerpt && <p className="row-excerpt">{'summary' in item ? item.summary : item.purpose}</p>}
+      </div>
+      <ArrowRight size={17} aria-hidden="true" />
+    </a>
+  );
 }
