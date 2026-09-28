@@ -91,7 +91,9 @@ interface LegacyIssue {
 export interface Guide {
   issueId: string;
   video?: string;
+  videoStorageKey?: string;
   pdf?: string;
+  pdfStorageKey?: string;
   id: string; // e.g. "WA-G01" or similar
   playbookId: string;
   title: string;
@@ -112,7 +114,7 @@ export interface Guide {
   revisionHistory: Revision[];
 }
 
-export type GuideContent = Pick<Guide, 'title' | 'summary' | 'status' | 'difficulty' | 'estimatedTime' | 'requirements' | 'beforeYouStart' | 'importantInformation' | 'video' | 'pdf' | 'steps' | 'commonProblems' | 'faq' | 'relatedItems' | 'internalNotes'>;
+export type GuideContent = Pick<Guide, 'title' | 'summary' | 'status' | 'difficulty' | 'estimatedTime' | 'requirements' | 'beforeYouStart' | 'importantInformation' | 'video' | 'videoStorageKey' | 'pdf' | 'pdfStorageKey' | 'steps' | 'commonProblems' | 'faq' | 'relatedItems' | 'internalNotes'>;
 export interface GuideIdentity {
   currentVersionId: string;
   versionNumber: number;
@@ -134,7 +136,7 @@ export interface GuideVersion extends GuideContent {
 }
 export const formatGuideVersion = (number: number) => `1.${number - 1}`;
 export const formatGuideDate = (date: string) => new Date(date).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', ...(date.includes('T') ? { hour: '2-digit', minute: '2-digit' } : {}) });
-const contentFields = ['title', 'summary', 'status', 'difficulty', 'estimatedTime', 'requirements', 'beforeYouStart', 'importantInformation', 'video', 'pdf', 'steps', 'commonProblems', 'faq', 'relatedItems', 'internalNotes'] as const;
+const contentFields = ['title', 'summary', 'status', 'difficulty', 'estimatedTime', 'requirements', 'beforeYouStart', 'importantInformation', 'video', 'videoStorageKey', 'pdf', 'pdfStorageKey', 'steps', 'commonProblems', 'faq', 'relatedItems', 'internalNotes'] as const;
 export function guideContent(guide: GuideContent): GuideContent {
   return JSON.parse(JSON.stringify(Object.fromEntries(contentFields.map(key => [key, guide[key] ?? (key === 'video' || key === 'pdf' ? '' : guide[key])]))));
 }

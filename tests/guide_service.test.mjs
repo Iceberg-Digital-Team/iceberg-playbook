@@ -403,3 +403,70 @@ test('restoreGuideVersion translates optimistic concurrency and business validat
     /This version is already current\./
   );
 });
+
+test('softDeleteGuide validates id and rejects empty/whitespace input', async () => {
+  const { softDeleteGuide } = await importTs('src/services/guideService.ts', 'guide-service');
+
+  await assert.rejects(
+    () => softDeleteGuide('   '),
+    /Invalid Guide ID\./
+  );
+
+  await assert.rejects(
+    () => softDeleteGuide(''),
+    /Invalid Guide ID\./
+  );
+});
+
+test('softDeleteGuide invokes exact fn_soft_delete_guide RPC and does NOT hard delete', async () => {
+  const { softDeleteGuide } = await importTs('src/services/guideService.ts', 'guide-service');
+
+  let rpcCall = null;
+  let hardDeleteCalled = false;
+
+  const mockClient = {
+    rpc: async (fn, params) => {
+      rpcCall = { fn, params };
+      return { error: null };
+    },
+    from: () => ({
+      delete: () => {
+        hardDeleteCalled = true;
+        return { eq: () => ({ error: null }) };
+      }
+    })
+  };
+
+  await softDeleteGuide('WA-G01', mockClient);
+
+  assert.equal(rpcCall.fn, 'fn_soft_delete_guide');
+  assert.deepEqual(rpcCall.params, { p_guide_id: 'WA-G01' });
+  assert.equal(hardDeleteCalled, false, 'hard delete should not be invoked');
+});
+
+test('softDeleteGuide propagates backend errors and translates permission denied', async () => {
+  const { softDeleteGuide } = await importTs('src/services/guideService.ts', 'guide-service');
+
+  const rlsClient = {
+    rpc: async () => ({
+      error: { code: '42501', message: 'Permission denied. Support or Admin role required.' }
+    })
+  };
+
+  await assert.rejects(
+    () => softDeleteGuide('WA-G01', rlsClient),
+    /Permission denied\. Support or Admin role required\./
+  );
+
+  const notFoundClient = {
+    rpc: async () => ({
+      error: { code: 'P0001', message: 'Guide WA-G01 not found or already deleted.' }
+    })
+  };
+
+  await assert.rejects(
+    () => softDeleteGuide('WA-G01', notFoundClient),
+    /Guide WA-G01 not found or already deleted\./
+  );
+});
+

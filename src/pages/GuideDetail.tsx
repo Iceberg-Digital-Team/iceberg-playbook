@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Edit, Link2, Share2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Edit, Link2, Share2, Trash2 } from 'lucide-react';
 import { useRouter } from '../router';
 import {
   formatGuideVersion,
@@ -10,12 +10,63 @@ import {
   type GuideVersion
 } from '../data';
 import { getPlaybookBySlug } from '../services/playbookService';
-import { getGuideById, listGuideVersions, restoreGuideVersion } from '../services/guideService';
+import { getGuideById, listGuideVersions, restoreGuideVersion, softDeleteGuide } from '../services/guideService';
 import { getIssueById } from '../services/issueService';
 import { GuideArticle } from '../components/knowledge/GuideArticle';
 import { GuideHistory, RestoreGuideDialog } from '../components/knowledge/GuideHistory';
 import '../components/knowledge/Knowledge.css';
 import { StateMessage } from '../components/knowledge/ApplicationUI';
+
+function DeleteGuideDialog({
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.showModal();
+    }
+    return () => el?.close();
+  }, []);
+
+  return (
+    <dialog
+      className="guide-restore-dialog"
+      ref={ref}
+      aria-labelledby="delete-guide-title"
+      onCancel={e => {
+        e.preventDefault();
+        if (!busy) onCancel();
+      }}
+    >
+      <h2 id="delete-guide-title">Delete Guide?</h2>
+      <p>
+        This Guide will be removed from active views.
+        <br />
+        Its version history and audit history will be preserved.
+      </p>
+      <div className="knowledge-actions">
+        <button autoFocus className="btn-secondary" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          className="btn-primary"
+          style={{ background: '#d32f2f', borderColor: '#d32f2f' }}
+          onClick={onConfirm}
+          disabled={busy}
+        >
+          {busy ? 'Deleting…' : 'Delete Guide'}
+        </button>
+      </div>
+    </dialog>
+  );
+}
 
 export function GuideDetail() {
   const { params, navigate } = useRouter();
@@ -29,6 +80,9 @@ export function GuideDetail() {
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
 
   useEffect(() => {
@@ -156,6 +210,22 @@ export function GuideDetail() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!current || !playbook) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await softDeleteGuide(current.id);
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+      navigate(`/playbooks/${playbook.slug}`);
+    } catch (err) {
+      setShowDeleteConfirm(false);
+      setDeleting(false);
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete Guide.');
+    }
+  };
+
   const selectedVersion = params.version
     ? versions.find(v => v.id === params.version)
     : undefined;
@@ -172,7 +242,9 @@ export function GuideDetail() {
         requirements: selectedVersion.requirements,
         importantInformation: selectedVersion.importantInformation,
         video: selectedVersion.video,
+        videoStorageKey: selectedVersion.videoStorageKey,
         pdf: selectedVersion.pdf,
+        pdfStorageKey: selectedVersion.pdfStorageKey,
         steps: selectedVersion.steps,
         commonProblems: selectedVersion.commonProblems,
         faq: selectedVersion.faq,
@@ -199,7 +271,9 @@ export function GuideDetail() {
     requirements: current.requirements,
     importantInformation: current.importantInformation,
     video: current.video,
+    videoStorageKey: current.videoStorageKey,
     pdf: current.pdf,
+    pdfStorageKey: current.pdfStorageKey,
     steps: current.steps,
     commonProblems: current.commonProblems,
     faq: current.faq,
@@ -231,14 +305,31 @@ export function GuideDetail() {
           <button className="btn-secondary" onClick={copy}>
             <Link2 size={14} />Copy Link
           </button>
+          {!historical && (
+            <button
+              className="btn-secondary"
+              style={{ color: '#d32f2f' }}
+              onClick={() => {
+                setDeleteError(null);
+                setShowDeleteConfirm(true);
+              }}
+            >
+              <Trash2 size={14} />Delete
+            </button>
+          )}
         </div>
       </div>
+      {deleteError && (
+        <div style={{ color: '#d32f2f', margin: '8px 0', fontWeight: 500 }} role="alert">
+          {deleteError}
+        </div>
+      )}
       {restoreError && (
         <div style={{ color: '#d32f2f', margin: '8px 0', fontWeight: 500 }} role="alert">
           {restoreError}
         </div>
       )}
-      {message && !restoreError && <p className="helper-text" role="status">{message}</p>}
+      {message && !restoreError && !deleteError && <p className="helper-text" role="status">{message}</p>}
       {historical && selectedVersion && (
         <section className="issue-connection">
           <h2>You are viewing an older version</h2>
@@ -272,6 +363,15 @@ export function GuideDetail() {
             if (!restoring) setShowRestoreConfirm(false);
           }}
           onRestore={handleRestore}
+        />
+      )}
+      {showDeleteConfirm && (
+        <DeleteGuideDialog
+          busy={deleting}
+          onCancel={() => {
+            if (!deleting) setShowDeleteConfirm(false);
+          }}
+          onConfirm={handleDelete}
         />
       )}
       <GuideArticle

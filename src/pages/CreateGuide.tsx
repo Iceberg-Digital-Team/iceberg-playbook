@@ -21,6 +21,7 @@ import { PageHeader, FormSection, StateMessage } from '../components/knowledge/A
 import { StringList, StepEditor, revealInvalid } from '../components/knowledge/EditorFields';
 import { MediaUploadField } from '../components/knowledge/MediaUploadField';
 import { type FileMetadata } from '../components/knowledge/mediaUtils';
+import { getSignedMediaUrl } from '../services/mediaService';
 
 export function CreateGuide() {
   const { path, params } = useRouter();
@@ -97,9 +98,32 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
   const [checklist, setChecklist] = useState(base ? guideChecklist(base) : []);
   const [info, setInfo] = useState(base?.importantInformation || '');
   const [video, setVideo] = useState(base?.video || '');
+  const [videoStorageKey, setVideoStorageKey] = useState(base?.videoStorageKey || '');
   const [pdf, setPdf] = useState(base?.pdf || '');
+  const [pdfStorageKey, setPdfStorageKey] = useState(base?.pdfStorageKey || '');
   const [videoMeta, setVideoMeta] = useState<FileMetadata | null>(null);
   const [pdfMeta, setPdfMeta] = useState<FileMetadata | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (base?.videoStorageKey && !base.video?.startsWith('http')) {
+      getSignedMediaUrl(base.videoStorageKey)
+        .then(signed => {
+          if (active) setVideo(signed);
+        })
+        .catch(() => {});
+    }
+    if (base?.pdfStorageKey && !base.pdf?.startsWith('http')) {
+      getSignedMediaUrl(base.pdfStorageKey)
+        .then(signed => {
+          if (active) setPdf(signed);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [base]);
   const [steps, setSteps] = useState<Array<Omit<Step, 'number'>>>(
     base ? structuredClone(base.steps) : [{ title: '', description: '' }]
   );
@@ -154,8 +178,10 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
     status,
     difficulty,
     estimatedTime,
-    video,
-    pdf,
+    video: videoStorageKey || video,
+    videoStorageKey: videoStorageKey || undefined,
+    pdf: pdfStorageKey || pdf,
+    pdfStorageKey: pdfStorageKey || undefined,
     steps: steps.map((s, i) => ({ ...s, number: i + 1 })),
     beforeYouStart: checklistChanged ? checklist.map(s => s.trim()).filter(Boolean) : base!.beforeYouStart,
     requirements: checklistChanged ? [] : base!.requirements,
@@ -192,7 +218,9 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
             requirements: content.requirements,
             importantInformation: content.importantInformation,
             video: content.video,
+            videoStorageKey: content.videoStorageKey,
             pdf: content.pdf,
+            pdfStorageKey: content.pdfStorageKey,
             steps: content.steps,
             commonProblems: content.commonProblems,
             faq: content.faq,
@@ -214,7 +242,9 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
           requirements: content.requirements,
           importantInformation: content.importantInformation,
           video: content.video,
+          videoStorageKey: content.videoStorageKey,
           pdf: content.pdf,
+          pdfStorageKey: content.pdfStorageKey,
           steps: content.steps,
           commonProblems: content.commonProblems,
           faq: content.faq,
@@ -378,18 +408,22 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
               </label>
             </FormSection>
 
-            <FormSection title="Video Tutorial" optional open={!!video}>
+            <FormSection title="Video Tutorial" optional open={!!video || !!videoStorageKey}>
               <MediaUploadField
                 type="video"
-                accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
-                acceptedFormatsText="Accepted formats: MP4, WebM, MOV"
+                accept="video/mp4,video/webm,.mp4,.webm"
+                acceptedFormatsText="Accepted formats: MP4, WebM"
                 dropText="Drag & drop a video here"
                 buttonText="Choose Video"
                 value={video}
                 initialValue={base?.video}
+                storageKey={videoStorageKey}
                 fileMeta={videoMeta}
-                onChange={(url, file) => {
+                domain="guides"
+                entityId={base?.id}
+                onChange={(url, file, key) => {
                   setVideo(url);
+                  setVideoStorageKey(key !== undefined ? key : (url ? videoStorageKey : ''));
                   setVideoMeta(file ? { name: file.name, size: file.size } : null);
                 }}
               />
@@ -399,7 +433,7 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
               <StepEditor steps={steps} initialSteps={base?.steps} onChange={setSteps} />
             </FormSection>
 
-            <FormSection title="PDF Guide" optional open={!!pdf}>
+            <FormSection title="PDF Guide" optional open={!!pdf || !!pdfStorageKey}>
               <MediaUploadField
                 type="pdf"
                 accept="application/pdf,.pdf"
@@ -408,9 +442,13 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
                 buttonText="Choose PDF"
                 value={pdf}
                 initialValue={base?.pdf}
+                storageKey={pdfStorageKey}
                 fileMeta={pdfMeta}
-                onChange={(url, file) => {
+                domain="guides"
+                entityId={base?.id}
+                onChange={(url, file, key) => {
                   setPdf(url);
+                  setPdfStorageKey(key !== undefined ? key : (url ? pdfStorageKey : ''));
                   setPdfMeta(file ? { name: file.name, size: file.size } : null);
                 }}
               />

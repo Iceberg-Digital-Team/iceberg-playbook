@@ -131,7 +131,9 @@ export function mapGuideRowToGuide(row: DatabaseGuideRow): VersionedGuide {
     requirements: Array.isArray(row.requirements) ? row.requirements : [],
     importantInformation: row.important_information || '',
     video: row.video || '',
+    videoStorageKey: row.video_storage_key || undefined,
     pdf: row.pdf || '',
+    pdfStorageKey: row.pdf_storage_key || undefined,
     steps: Array.isArray(row.steps) ? row.steps : [],
     commonProblems: Array.isArray(row.common_problems) ? row.common_problems : [],
     faq: Array.isArray(row.faq) ? row.faq : [],
@@ -161,7 +163,9 @@ export function mapGuideVersionRowToVersion(row: DatabaseGuideVersionRow): Guide
     requirements: Array.isArray(row.requirements) ? row.requirements : [],
     importantInformation: row.important_information || '',
     video: row.video || '',
+    videoStorageKey: row.video_storage_key || undefined,
     pdf: row.pdf || '',
+    pdfStorageKey: row.pdf_storage_key || undefined,
     steps: Array.isArray(row.steps) ? row.steps : [],
     commonProblems: Array.isArray(row.common_problems) ? row.common_problems : [],
     faq: Array.isArray(row.faq) ? row.faq : [],
@@ -523,3 +527,25 @@ export async function restoreGuideVersion(
 
   return mapGuideRowToGuide(data as DatabaseGuideRow);
 }
+
+export async function softDeleteGuide(
+  id: string,
+  client: SupabaseClient = defaultSupabase
+): Promise<void> {
+  const cleanId = id.trim();
+  if (!cleanId) {
+    throw new Error('Invalid Guide ID.');
+  }
+
+  const { error } = await client.rpc('fn_soft_delete_guide', {
+    p_guide_id: cleanId
+  });
+
+  if (error) {
+    if (error.code === '42501' || error.message?.includes('Permission denied')) {
+      throw new Error('Permission denied. Support or Admin role required.');
+    }
+    throw new Error(error.message || 'Could not delete Guide.');
+  }
+}
+
