@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ArrowRight, MessageSquare, Briefcase, Home as HomeIcon, Video, Mic, Globe, type LucideIcon } from 'lucide-react';
 import { useRouter } from '../router';
-import { getPlaybooks, getIssues, getGuides, getSOPs, type Playbook } from '../data';
 import { listPlaybooks } from '../services/playbookService';
+import type { Playbook } from '../data';
+import { listRecentSolutions, type RecentSolutionItem } from '../services/homeService';
 import './Home.css';
 
 const iconMap: Record<string, LucideIcon> = { MessageSquare, Briefcase, Home: HomeIcon, Video, Mic, Globe };
@@ -14,6 +15,10 @@ export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [recentItems, setRecentItems] = useState<RecentSolutionItem[]>([]);
+  const [recentLoading, setRecentLoading] = useState(true);
+  const [recentError, setRecentError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,15 +40,25 @@ export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
     };
   }, []);
 
-  const legacyPlaybooks = getPlaybooks();
-  const recentItems = [
-    ...getIssues().map(item => ({ ...item, type: 'Issue', folder: 'issues' })),
-    ...getGuides().map(item => ({ ...item, type: 'Guide', folder: 'guides' })),
-    ...getSOPs().map(item => ({ ...item, type: 'SOP', folder: 'sops' })),
-  ]
-    .filter(item => item.status === 'Verified' && legacyPlaybooks.some(pb => pb.id === item.playbookId))
-    .sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
-    .slice(0, 4);
+  useEffect(() => {
+    let active = true;
+    listRecentSolutions()
+      .then(items => {
+        if (active) {
+          setRecentItems(items);
+          setRecentLoading(false);
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setRecentError(err instanceof Error ? err.message : 'Unable to load recent solutions.');
+          setRecentLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
@@ -92,19 +107,26 @@ export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
       </section>
       <section className="home-recent" aria-labelledby="home-recent-title">
         <div className="home-section-heading"><h2 id="home-recent-title">Recent solutions</h2></div>
-        {recentItems.length ? <ul className="home-solutions">
-          {recentItems.map(item => {
-            const pb = legacyPlaybooks.find(book => book.id === item.playbookId)!;
-            return <li key={`${item.folder}-${item.id}`}>
-              <a className="home-solution" href={`#/playbooks/${pb.slug}/${item.folder}/${encodeURIComponent(item.id)}`}>
-                <span className="home-solution-code">{item.id}</span>
-                <span className="home-solution-title">{item.title}</span>
-                <span className="home-solution-type">{item.type}</span>
-                <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
-              </a>
-            </li>;
-          })}
-        </ul> : <p className="home-empty">Verified solutions will appear here as your team documents them.</p>}
+        {recentLoading ? (
+          <p className="home-empty">Loading recent solutions…</p>
+        ) : recentError ? (
+          <p className="home-empty" role="alert">{recentError}</p>
+        ) : recentItems.length ? (
+          <ul className="home-solutions">
+            {recentItems.map(item => (
+              <li key={`${item.folder}-${item.id}`}>
+                <a className="home-solution" href={item.href}>
+                  <span className="home-solution-code">{item.id}</span>
+                  <span className="home-solution-title">{item.title}</span>
+                  <span className="home-solution-type">{item.type}</span>
+                  <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="home-empty">Verified solutions will appear here as your team documents them.</p>
+        )}
       </section>
     </div>
   );
