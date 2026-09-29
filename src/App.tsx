@@ -11,7 +11,6 @@ import { IssueDetail } from './pages/IssueDetail';
 import { GuideDetail } from './pages/GuideDetail';
 import { SOPDetail } from './pages/SOPDetail';
 import { Search } from './pages/Search';
-import { Troubleshooting } from './pages/Troubleshooting';
 import { Create } from './pages/Create';
 import { CreateIssue } from './pages/CreateIssue';
 import { CreateGuide } from './pages/CreateGuide';
@@ -20,46 +19,22 @@ import { CreatePlaybook } from './pages/CreatePlaybook';
 import { Settings } from './pages/Settings';
 
 import { ContentErrorBoundary } from './components/knowledge/ContentErrorBoundary';
-import { StorageRecovery } from './components/knowledge/StorageRecovery';
-import { StateMessage } from './components/knowledge/ApplicationUI';
-import { checkStorageIntegrity } from './data';
 import './product.css';
 import { useAuth } from './auth/AuthProvider';
 import { LoginPage, ForgotPasswordPage } from './pages/LoginPage';
 
 function App() {
-  const [integrity, setIntegrity] = useState(() => checkStorageIntegrity());
-  const { session } = useAuth();
+  const { session, loading } = useAuth();
   const { path } = useRouter();
   const isAuthPage = path === '/login' || path === '/forgot-password';
 
   useEffect(() => {
-    if (integrity.status === 'corrupted' || integrity.status === 'unavailable') return;
+    if (loading) return;
     if (!session && !isAuthPage) window.location.replace('#/login');
     else if (session && isAuthPage) window.location.replace('#/');
-  }, [session, isAuthPage, integrity.status]);
+  }, [session, isAuthPage, loading]);
 
-  if (integrity.status === 'unavailable') {
-    return (
-      <div className="editor" style={{ maxWidth: 680, margin: '40px auto', padding: '0 20px' }}>
-        <StateMessage
-          error
-          title="Storage Unavailable"
-          action={
-            <button type="button" className="btn-secondary" onClick={() => setIntegrity(checkStorageIntegrity())}>
-              Retry
-            </button>
-          }
-        >
-          Browser local storage could not be accessed. Please check your browser privacy or cookie settings.
-        </StateMessage>
-      </div>
-    );
-  }
-
-  if (integrity.status === 'corrupted') {
-    return <StorageRecovery integrity={integrity} onRecovered={() => setIntegrity(checkStorageIntegrity())} />;
-  }
+  if (loading) return null;
 
   if (!session) return path === '/forgot-password' ? <ForgotPasswordPage/> : <LoginPage/>;
   return <WorkspaceApp/>;
@@ -91,19 +66,21 @@ function WorkspaceApp() {
       case '/playbooks/[slug]/sops/[id]':
         return <SOPDetail />;
       case '/search':
-        return <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
-      case '/troubleshooting':
-        return <Troubleshooting />;
+        return <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} routeType={params.type} />;
       case '/create':
         return <Create />;
       case '/create/issue':
-        return <CreateIssue />;
+        return <CreateIssue key="create-issue" />;
+      case '/issues/[id]/edit':
+        return <CreateIssue key={window.location.hash} />;
       case '/create/guide':
         return <CreateGuide key="create-guide" />;
       case '/guides/[id]/edit':
         return <CreateGuide key={window.location.hash} />;
       case '/create/sop':
-        return <CreateSOP />;
+        return <CreateSOP key="create-sop" />;
+      case '/sops/[id]/edit':
+        return <CreateSOP key={window.location.hash} />;
       case '/create/playbook':
         return <CreatePlaybook />;
       case '/settings':

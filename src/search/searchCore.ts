@@ -1,6 +1,6 @@
 import type { Playbook, Issue, VersionedGuide, SOP } from '../data';
 
-export type ContentItem = Issue | VersionedGuide | SOP;
+export type ContentItem = Issue | VersionedGuide | SOP | Playbook;
 
 export interface SearchData {
   issues: Issue[];
@@ -12,6 +12,7 @@ export interface SearchData {
 export interface SearchOptions {
   type?: string;
   playbookId?: string;
+  includePlaybooks?: boolean;
 }
 
 export const SEARCH_WEIGHTS = {
@@ -22,10 +23,37 @@ export const SEARCH_WEIGHTS = {
   contentOrPlaybook: 5,
 } as const;
 
-export function getItemType(item: ContentItem): 'Issues' | 'Guides' | 'SOPs' {
+export function isPlaybook(item: ContentItem): item is Playbook {
+  return 'slug' in item && 'name' in item;
+}
+
+export type SearchDomain = 'All' | 'Playbooks' | 'Issues' | 'Guides' | 'SOPs';
+
+export function resolveSearchType(rawType?: string | null): SearchDomain {
+  if (!rawType) return 'All';
+  const trimmed = rawType.trim().toLowerCase();
+  const validDomains: SearchDomain[] = ['Playbooks', 'Issues', 'Guides', 'SOPs'];
+  const match = validDomains.find(d => d.toLowerCase() === trimmed);
+  return match || 'All';
+}
+
+export function getItemType(item: ContentItem): 'Playbooks' | 'Issues' | 'Guides' | 'SOPs' {
+  if (isPlaybook(item)) return 'Playbooks';
   if ('issueId' in item) return 'Guides';
   if ('owner' in item) return 'SOPs';
   return 'Issues';
+}
+
+export function getRowJiraCode(item: ContentItem, linkedIssue?: Issue): string | undefined {
+  if (isPlaybook(item)) return undefined;
+  if ('owner' in item && !('symptoms' in item)) return undefined; // SOP
+  if ('symptoms' in item || 'errorMessage' in item) {
+    return (item as Issue).jiraCode?.trim() || undefined;
+  }
+  if ('issueId' in item) {
+    return linkedIssue?.jiraCode?.trim() || undefined;
+  }
+  return undefined;
 }
 
 const PUNCTUATION = '()[]{}*\\/.,:;!?"\'`~^+=|<>@#$%&';
@@ -72,7 +100,14 @@ export function searchKnowledge(
   const playbookMap = new Map(playbooks.map(p => [p.id, p]));
   const issueMap = new Map(issues.map(i => [i.id, i]));
 
-  const rawList: ContentItem[] = [...issues, ...guides, ...sops];
+  const includePlaybooks = options.includePlaybooks ?? (options.type === 'Playbooks');
+
+  const rawList: ContentItem[] = [
+    ...(includePlaybooks ? playbooks : []),
+    ...issues,
+    ...guides,
+    ...sops
+  ];
 
   const filterType = options.type ?? 'All';
   const filterPlaybookId = options.playbookId ?? 'All';
@@ -81,15 +116,23 @@ export function searchKnowledge(
 
   for (let i = 0; i < rawList.length; i++) {
     const item = rawList[i];
-    if (!validPlaybookIds.has(item.playbookId)) {
-      continue;
+    if (isPlaybook(item)) {
+      if (filterPlaybookId !== 'All' && item.id !== filterPlaybookId) {
+        continue;
+      }
+    } else {
+      if (!validPlaybookIds.has(item.playbookId)) {
+        continue;
+      }
+      if (filterPlaybookId !== 'All' && item.playbookId !== filterPlaybookId) {
+        continue;
+      }
     }
+
     if (filterType !== 'All' && getItemType(item) !== filterType) {
       continue;
     }
-    if (filterPlaybookId !== 'All' && item.playbookId !== filterPlaybookId) {
-      continue;
-    }
+
     candidates.push({ item, originalIndex: i });
   }
 
@@ -102,49 +145,79 @@ export function searchKnowledge(
   const scoredResults: { item: ContentItem; score: number; originalIndex: number }[] = [];
 
   for (const { item, originalIndex } of candidates) {
-    const idLower = item.id.toLowerCase();
-    const titleLower = item.title.toLowerCase();
-
-    let symptomsOrError = '';
-    if ('symptoms' in item || 'errorMessage' in item) {
-      const issue = item as Issue;
-      const symptoms = (issue.symptoms ?? []).join(' ').toLowerCase();
-      const err = (issue.errorMessage ?? '').toLowerCase();
-      symptomsOrError = `${symptoms} ${err}`;
-    }
-
+    let idLower = '';
+    let jiraCodeLower = '';
+    let linkedJiraCodeLower = '';
+    let titleLower = '';
     let summaryOrPurpose = '';
-    if ('summary' in item && typeof item.summary === 'string') {
-      summaryOrPurpose = item.summary.toLowerCase();
-    } else if ('purpose' in item && typeof item.purpose === 'string') {
-      summaryOrPurpose = item.purpose.toLowerCase();
-    }
-
+    let symptomsOrError = '';
     const contentParts: string[] = [];
-    const pb = playbookMap.get(item.playbookId);
-    if (pb?.name) {
-      contentParts.push(pb.name.toLowerCase());
-    }
 
-    if ('issueId' in item) {
-      const guide = item as VersionedGuide;
-      const linked = issueMap.get(guide.issueId);
-      if (linked) {
-        contentParts.push(linked.id.toLowerCase());
-        contentParts.push(linked.title.toLowerCase());
+    if (isPlaybook(item)) {
+      idLower = (item.code || item.id).toLowerCase();
+      titleLower = item.name.toLowerCase();
+      summaryOrPurpose = (item.description || '').toLowerCase();
+      if (item.id) contentParts.push(item.id.toLowerCase());
+      if (item.slug) contentParts.push(item.slug.toLowerCase());
+    } else {
+      idLower = item.id.toLowerCase();
+      titleLower = item.title.toLowerCase();
+
+      if ('symptoms' in item || 'errorMessage' in item) {
+        const issue = item as Issue;
+        if (issue.jiraCode) {
+          jiraCodeLower = issue.jiraCode.toLowerCase().trim();
+        }
+        const symptoms = (issue.symptoms ?? []).join(' ').toLowerCase();
+        const err = (issue.errorMessage ?? '').toLowerCase();
+        const ctx = (issue.context ?? '').toLowerCase();
+        symptomsOrError = `${symptoms} ${err} ${ctx}`.trim();
       }
-      if (guide.steps) {
-        for (const s of guide.steps) {
-          if (s.title) contentParts.push(s.title.toLowerCase());
-          if (s.description) contentParts.push(s.description.toLowerCase());
+
+      if ('summary' in item && typeof item.summary === 'string') {
+        summaryOrPurpose = item.summary.toLowerCase();
+      } else if ('purpose' in item && typeof item.purpose === 'string') {
+        summaryOrPurpose = item.purpose.toLowerCase();
+      }
+
+      const pb = playbookMap.get(item.playbookId);
+      if (pb?.name) {
+        contentParts.push(pb.name.toLowerCase());
+      }
+      if (pb?.code) {
+        contentParts.push(pb.code.toLowerCase());
+      }
+
+      if ('issueId' in item) {
+        const guide = item as VersionedGuide;
+        const linked = issueMap.get(guide.issueId);
+        if (linked) {
+          contentParts.push(linked.id.toLowerCase());
+          contentParts.push(linked.title.toLowerCase());
+          if (linked.jiraCode) {
+            linkedJiraCodeLower = linked.jiraCode.toLowerCase().trim();
+            contentParts.push(linkedJiraCodeLower);
+          }
+        }
+        if (guide.steps) {
+          for (const s of guide.steps) {
+            if (s.title) contentParts.push(s.title.toLowerCase());
+            if (s.description) contentParts.push(s.description.toLowerCase());
+          }
+        }
+        if (guide.commonProblems) {
+          for (const cp of guide.commonProblems) {
+            if (cp.problem) contentParts.push(cp.problem.toLowerCase());
+            if (cp.cause) contentParts.push(cp.cause.toLowerCase());
+            if (cp.solution) contentParts.push(cp.solution.toLowerCase());
+          }
         }
       }
-      if (guide.commonProblems) {
-        for (const cp of guide.commonProblems) {
-          if (cp.problem) contentParts.push(cp.problem.toLowerCase());
-          if (cp.cause) contentParts.push(cp.cause.toLowerCase());
-          if (cp.solution) contentParts.push(cp.solution.toLowerCase());
-        }
+
+      if ('whenToUse' in item) {
+        const sop = item as SOP;
+        if (sop.whenToUse) contentParts.push(sop.whenToUse.toLowerCase());
+        if (sop.responsibleTeam) contentParts.push(sop.responsibleTeam.toLowerCase());
       }
     }
 
@@ -154,6 +227,7 @@ export function searchKnowledge(
     for (const t of tokens) {
       const matched =
         idLower.includes(t) ||
+        jiraCodeLower.includes(t) ||
         titleLower.includes(t) ||
         symptomsOrError.includes(t) ||
         summaryOrPurpose.includes(t) ||
@@ -171,13 +245,20 @@ export function searchKnowledge(
 
     let score = 0;
 
-    if (tokens.length === 1 && tokens[0] === idLower) {
-      score += SEARCH_WEIGHTS.exactCode;
+    if (tokens.length === 1) {
+      const single = tokens[0];
+      if (single === idLower || single === item.id.toLowerCase()) {
+        score += SEARCH_WEIGHTS.exactCode;
+      } else if (jiraCodeLower && single === jiraCodeLower) {
+        score += SEARCH_WEIGHTS.exactCode;
+      } else if (linkedJiraCodeLower && single === linkedJiraCodeLower) {
+        score += SEARCH_WEIGHTS.exactCode;
+      }
     }
 
     for (const t of tokens) {
       let tokenWeight = 0;
-      if (titleLower.includes(t) || idLower.includes(t)) {
+      if (titleLower.includes(t) || idLower.includes(t) || (jiraCodeLower && jiraCodeLower.includes(t))) {
         tokenWeight = Math.max(tokenWeight, SEARCH_WEIGHTS.title);
       }
       if (symptomsOrError.includes(t)) {
@@ -205,87 +286,3 @@ export function searchKnowledge(
   return scoredResults.map(r => r.item);
 }
 
-export const TROUBLESHOOTING_STOPWORDS = new Set([
-  'and', 'are', 'for', 'from', 'has', 'its', 'that',
-  'the', 'was', 'were', 'will', 'with', 'other', 'issue', 'problem'
-]);
-
-export function matchTroubleshootingIssue(
-  playbookId: string,
-  category: string,
-  symptom: string,
-  issues: Issue[]
-): Issue | null {
-  if (!playbookId || !category || !symptom) {
-    return null;
-  }
-
-  const rawSymptom = symptom.trim();
-  if (rawSymptom.toLowerCase() === 'other') {
-    return null;
-  }
-
-  const playbookIssues = (issues ?? []).filter(i => i.playbookId === playbookId);
-  if (playbookIssues.length === 0) {
-    return null;
-  }
-
-  const rawTokens = tokenize(rawSymptom);
-  const meaningfulTokens = rawTokens.filter(
-    t => t.length > 2 && !TROUBLESHOOTING_STOPWORDS.has(t)
-  );
-
-  if (meaningfulTokens.length === 0) {
-    return null;
-  }
-
-  const matchingCandidates: { item: Issue; score: number; originalIndex: number }[] = [];
-
-  for (let idx = 0; idx < playbookIssues.length; idx++) {
-    const item = playbookIssues[idx];
-    const titleLower = item.title.toLowerCase();
-    const symptomsLower = (item.symptoms ?? []).join(' ').toLowerCase();
-    const errorLower = (item.errorMessage ?? '').toLowerCase();
-
-    let matchesAll = true;
-    for (const token of meaningfulTokens) {
-      const inTitle = titleLower.includes(token);
-      const inSymptomsOrError = symptomsLower.includes(token) || errorLower.includes(token);
-      if (!inTitle && !inSymptomsOrError) {
-        matchesAll = false;
-        break;
-      }
-    }
-
-    if (!matchesAll) {
-      continue;
-    }
-
-    let score = 0;
-    for (const token of meaningfulTokens) {
-      let tokenWeight = 0;
-      if (titleLower.includes(token)) {
-        tokenWeight = Math.max(tokenWeight, SEARCH_WEIGHTS.title);
-      }
-      if (symptomsLower.includes(token) || errorLower.includes(token)) {
-        tokenWeight = Math.max(tokenWeight, SEARCH_WEIGHTS.symptomsOrError);
-      }
-      score += tokenWeight;
-    }
-
-    matchingCandidates.push({ item, score, originalIndex: idx });
-  }
-
-  if (matchingCandidates.length === 0) {
-    return null;
-  }
-
-  matchingCandidates.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    return a.originalIndex - b.originalIndex;
-  });
-
-  return matchingCandidates[0].item;
-}

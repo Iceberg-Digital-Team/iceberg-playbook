@@ -1,22 +1,24 @@
-import type { Issue } from '../data';
-import { getSearchData } from './dataSource';
-import { searchKnowledge, matchTroubleshootingIssue, type SearchOptions, type ContentItem } from './searchCore';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabase as defaultSupabase } from '../lib/supabase';
+import { getSearchData, type RawSearchData } from './dataSource';
+import { searchKnowledge, type SearchOptions, type ContentItem } from './searchCore';
 
-export function executeSearch(query: string, options: SearchOptions = {}): ContentItem[] {
-  const data = getSearchData();
-  return searchKnowledge(query, data, options);
+export function executeSearch(
+  query: string,
+  data: RawSearchData,
+  options: SearchOptions = {}
+): ContentItem[] {
+  return searchKnowledge(query, data, { includePlaybooks: true, ...options });
 }
 
-export function resolveTroubleshooting(
-  playbookId: string | null,
-  category: string | null,
-  symptom: string | null
-): Issue | null {
-  if (!playbookId || !category || !symptom) {
-    return null;
-  }
-  const { issues } = getSearchData();
-  return matchTroubleshootingIssue(playbookId, category, symptom, issues);
+export async function search(
+  query: string,
+  options: SearchOptions = {},
+  client: SupabaseClient = defaultSupabase
+): Promise<ContentItem[]> {
+  const data = await getSearchData(client);
+  return executeSearch(query, data, options);
 }
 
-export type { SearchOptions, ContentItem };
+export { getSearchData };
+export type { SearchOptions, ContentItem, RawSearchData };

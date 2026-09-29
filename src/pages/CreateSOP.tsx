@@ -1,24 +1,369 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useRouter } from '../router';
-import { getPlaybooks, addSOP, formatStorageError, type Step, type SOP } from '../data';
-import { PageHeader, FormSection } from '../components/knowledge/ApplicationUI';
+import type { Playbook, Step, SOP } from '../data';
+import { listPlaybooks } from '../services/playbookService';
+import { createSop, getSopById, updateSop } from '../services/sopService';
+import { PageHeader, FormSection, StateMessage } from '../components/knowledge/ApplicationUI';
 import { StringList, StepEditor, revealInvalid } from '../components/knowledge/EditorFields';
+
 export function CreateSOP() {
- const {navigate,params}=useRouter();const playbooks=getPlaybooks();const [playbookId,setPlaybookId]=useState(params.playbook||playbooks[0]?.id||'');
- const [title,setTitle]=useState('');const [status,setStatus]=useState<SOP['status']>('Draft');const [time,setTime]=useState('30 min');const [team,setTeam]=useState('Support & Onboarding Team');
- const [purpose,setPurpose]=useState('');const [when,setWhen]=useState('');const [requirements,setRequirements]=useState<string[]>([]);const [checklist,setChecklist]=useState(['Customer information received','Setup verified','Testing completed']);
- const [steps,setSteps]=useState<Omit<Step,'number'>[]>([{title:'',description:''}]);const [escalation,setEscalation]=useState('');const [completion,setCompletion]=useState('');const [notes,setNotes]=useState('');const [error,setError]=useState('');
- const pb=playbooks.find(p=>p.id===playbookId);
- const submit=(e:React.FormEvent)=>{e.preventDefault();setError('');try{if(!pb||!title.trim()||!purpose.trim()||!when.trim())throw Error('Select a Playbook and complete the title, purpose and when to use.');const sop=addSOP({playbookId,title:title.trim(),status,estimatedTime:time,purpose,whenToUse:when,requirements:requirements.filter(s=>s.trim()),responsibleTeam:team,checklist:checklist.filter(s=>s.trim()),steps:steps.map((s,i)=>({...s,number:i+1})),escalationRules:escalation,completionCriteria:completion,relatedIssues:[],relatedGuides:[],internalNotes:notes,revisionHistory:[{version:'1.0.0',date:new Date().toISOString().split('T')[0],updatedBy:'Support Team',changes:'SOP published via editor.'}]});navigate(`/playbooks/${pb.slug}/sops/${sop.id}`);}catch(e){setError(formatStorageError(e, 'Could not publish SOP.'));}};
- return <div className="editor"><a className="back-link" href="#/create"><ArrowLeft size={14}/>Back to Create</a><PageHeader title="Create SOP" description="Define a repeatable operational process for Support."/><form onSubmit={submit} onInvalid={revealInvalid}>
- <FormSection title="Basic Information"><label>Playbook *<select required value={playbookId} onChange={e=>setPlaybookId(e.target.value)}><option value="" disabled>Select a Playbook</option>{playbooks.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>SOP Title *<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. WhatsApp Customer Onboarding Process"/></label><div className="form-grid"><label>Status<select value={status} onChange={e=>setStatus(e.target.value as SOP['status'])}><option>Draft</option><option>Verified</option></select></label><label>Estimated Duration<input value={time} onChange={e=>setTime(e.target.value)}/></label></div><label>Responsible Team<input value={team} onChange={e=>setTeam(e.target.value)}/></label><p className="helper-text">{pb?.code||'SOP'}-SOP code assigned when published.</p></FormSection>
- <FormSection title="Purpose"><label>Purpose *<textarea required rows={3} value={purpose} onChange={e=>setPurpose(e.target.value)}/></label><label>When to Use *<textarea required rows={3} value={when} onChange={e=>setWhen(e.target.value)}/></label></FormSection>
- <FormSection title="Before You Start" optional><StringList label="Requirement" values={requirements} onChange={setRequirements}/></FormSection>
- <FormSection title="Process Checklist" optional open><StringList label="Workflow Stage" values={checklist} onChange={setChecklist}/></FormSection>
- <FormSection title="Process Steps"><StepEditor steps={steps} onChange={setSteps}/></FormSection>
- <FormSection title="Escalation Rules" optional><label>Escalation Rules<textarea rows={3} value={escalation} onChange={e=>setEscalation(e.target.value)}/></label></FormSection>
- <FormSection title="Completion Criteria" optional><label>Completion Criteria<textarea rows={3} value={completion} onChange={e=>setCompletion(e.target.value)}/></label></FormSection>
- <FormSection title="Internal Notes" optional><label>Support Only<textarea rows={3} value={notes} onChange={e=>setNotes(e.target.value)}/></label></FormSection>
- {error&&<p className="knowledge-error" role="alert">{error}</p>}<div className="form-actions"><a className="btn-secondary" href="#/create">Cancel</a><button className="btn-primary" type="submit">Publish SOP</button></div></form></div>;
+  const { path, params } = useRouter();
+  const isEdit = path === '/sops/[id]/edit';
+  const [initial, setInitial] = useState<SOP | null | undefined>(isEdit ? undefined : null);
+  const [loading, setLoading] = useState(isEdit && Boolean(params.id));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (isEdit && params.id) {
+      getSopById(params.id)
+        .then(sop => {
+          if (!active) return;
+          setInitial(sop);
+          setLoading(false);
+        })
+        .catch(err => {
+          if (!active) return;
+          setError(err instanceof Error ? err.message : 'Failed to load SOP.');
+          setLoading(false);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [isEdit, params.id]);
+
+  if (loading) {
+    return (
+      <div className="editor">
+        <StateMessage title="Loading SOP…">
+          Retrieving standard operating procedure for editing…
+        </StateMessage>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="editor">
+        <StateMessage
+          error
+          title="Unable to load SOP"
+          action={<a href="#/playbooks">Back to Playbooks</a>}
+        >
+          {error}
+        </StateMessage>
+      </div>
+    );
+  }
+
+  if (isEdit && !initial) {
+    return (
+      <StateMessage
+        title="SOP not found"
+        action={<a href="#/playbooks">Back to Playbooks</a>}
+      />
+    );
+  }
+
+  return <SOPEditor key={initial?.id || 'new'} initial={initial || undefined} />;
+}
+
+function SOPEditor({ initial }: { initial?: SOP }) {
+  const { navigate, params } = useRouter();
+  const isEdit = Boolean(initial);
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [playbookId, setPlaybookId] = useState(initial?.playbookId || params.playbook || '');
+  const [title, setTitle] = useState(initial?.title || '');
+  const [status, setStatus] = useState<SOP['status']>(initial?.status || 'Draft');
+  const [time, setTime] = useState(initial?.estimatedTime || '30 min');
+  const [team, setTeam] = useState(initial?.responsibleTeam || 'Support & Onboarding Team');
+  const [purpose, setPurpose] = useState(initial?.purpose || '');
+  const [when, setWhen] = useState(initial?.whenToUse || '');
+  const [requirements, setRequirements] = useState<string[]>(initial?.requirements || []);
+  const [checklist, setChecklist] = useState(
+    initial?.checklist || [
+      'Customer information received',
+      'Setup verified',
+      'Testing completed'
+    ]
+  );
+  const [steps, setSteps] = useState<Omit<Step, 'number'>[]>(
+    initial?.steps?.length
+      ? initial.steps.map(s => ({ title: s.title, description: s.description }))
+      : [{ title: '', description: '' }]
+  );
+  const [escalation, setEscalation] = useState(initial?.escalationRules || '');
+  const [completion, setCompletion] = useState(initial?.completionCriteria || '');
+  const [notes, setNotes] = useState(initial?.internalNotes || '');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    listPlaybooks()
+      .then(data => {
+        if (!active) return;
+        setPlaybooks(data);
+        if (!initial) {
+          setPlaybookId(current => params.playbook || current || (data.length > 0 ? data[0].id : ''));
+        }
+      })
+      .catch(err => {
+        if (active) {
+          console.error('Failed to load playbooks for SOP:', err);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [params.playbook, initial]);
+
+  const pb = playbooks.find(p => p.id === playbookId);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    const trimmedTitle = title.trim();
+    const trimmedPurpose = purpose.trim();
+    const trimmedWhen = when.trim();
+
+    if (!playbookId || !trimmedTitle || !trimmedPurpose || !trimmedWhen) {
+      setError('Select a Playbook and complete the title, purpose and when to use.');
+      return;
+    }
+
+    if (!pb) {
+      setError('Select an existing Playbook.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (isEdit && initial) {
+        await updateSop({
+          id: initial.id,
+          title: trimmedTitle,
+          status,
+          estimatedTime: time.trim() || '30 min',
+          purpose: trimmedPurpose,
+          whenToUse: trimmedWhen,
+          requirements: requirements.filter(s => s.trim()),
+          responsibleTeam: team.trim() || 'Support & Onboarding Team',
+          checklist: checklist.filter(s => s.trim()),
+          steps: steps.map((s, i) => ({
+            number: i + 1,
+            title: s.title.trim(),
+            description: s.description.trim()
+          })),
+          escalationRules: escalation.trim(),
+          completionCriteria: completion.trim(),
+          relatedIssues: initial.relatedIssues || [],
+          relatedGuides: initial.relatedGuides || [],
+          internalNotes: notes.trim(),
+          owner: initial.owner || 'Support Team',
+          revisionHistory: initial.revisionHistory || []
+        });
+        navigate(`/playbooks/${pb.slug}/sops/${initial.id}`);
+      } else {
+        const sop = await createSop({
+          playbookId,
+          title: trimmedTitle,
+          status,
+          estimatedTime: time.trim() || '30 min',
+          purpose: trimmedPurpose,
+          whenToUse: trimmedWhen,
+          requirements: requirements.filter(s => s.trim()),
+          responsibleTeam: team.trim() || 'Support & Onboarding Team',
+          checklist: checklist.filter(s => s.trim()),
+          steps: steps.map((s, i) => ({
+            number: i + 1,
+            title: s.title.trim(),
+            description: s.description.trim()
+          })),
+          escalationRules: escalation.trim(),
+          completionCriteria: completion.trim(),
+          relatedIssues: [],
+          relatedGuides: [],
+          internalNotes: notes.trim(),
+          owner: 'Support Team'
+        });
+        navigate(`/playbooks/${pb.slug}/sops/${sop.id}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : (isEdit ? 'Could not update SOP.' : 'Could not publish SOP.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const cancelHref = isEdit && pb && initial
+    ? `#/playbooks/${pb.slug}/sops/${initial.id}`
+    : isEdit && pb
+    ? `#/playbooks/${pb.slug}`
+    : '#/create';
+
+  return (
+    <div className="editor">
+      <a className="back-link" href={cancelHref}>
+        <ArrowLeft size={14} />
+        {isEdit && initial ? `Back to ${initial.id}` : 'Back to Create'}
+      </a>
+      <PageHeader
+        title={isEdit && initial ? `Edit SOP · ${initial.id}` : 'Create SOP'}
+        description={
+          isEdit
+            ? 'Update standard operating procedure details.'
+            : 'Define a repeatable operational process for Support.'
+        }
+      />
+      <form onSubmit={submit} onInvalid={revealInvalid}>
+        <FormSection title="Basic Information">
+          <label>
+            Playbook *
+            <select
+              required
+              value={playbookId}
+              disabled={isEdit}
+              onChange={e => setPlaybookId(e.target.value)}
+            >
+              <option value="" disabled>
+                Select a Playbook
+              </option>
+              {playbooks.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            SOP Title *
+            <input
+              required
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. WhatsApp Customer Onboarding Process"
+            />
+          </label>
+          <div className="form-grid">
+            <label>
+              Status
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value as SOP['status'])}
+              >
+                <option>Draft</option>
+                <option>Verified</option>
+              </select>
+            </label>
+            <label>
+              Estimated Duration
+              <input value={time} onChange={e => setTime(e.target.value)} />
+            </label>
+          </div>
+          <label>
+            Responsible Team
+            <input value={team} onChange={e => setTeam(e.target.value)} />
+          </label>
+          <p className="helper-text">
+            {isEdit && initial
+              ? `Code: ${initial.id}`
+              : `${pb?.code || 'SOP'}-SOP code assigned when published.`}
+          </p>
+        </FormSection>
+
+        <FormSection title="Purpose">
+          <label>
+            Purpose *
+            <textarea
+              required
+              rows={3}
+              value={purpose}
+              onChange={e => setPurpose(e.target.value)}
+            />
+          </label>
+          <label>
+            When to Use *
+            <textarea
+              required
+              rows={3}
+              value={when}
+              onChange={e => setWhen(e.target.value)}
+            />
+          </label>
+        </FormSection>
+
+        <FormSection title="Before You Start" optional>
+          <StringList
+            label="Requirement"
+            values={requirements}
+            onChange={setRequirements}
+          />
+        </FormSection>
+
+        <FormSection title="Process Checklist" optional open>
+          <StringList
+            label="Workflow Stage"
+            values={checklist}
+            onChange={setChecklist}
+          />
+        </FormSection>
+
+        <FormSection title="Process Steps">
+          <StepEditor steps={steps} onChange={setSteps} />
+        </FormSection>
+
+        <FormSection title="Escalation Rules" optional>
+          <label>
+            Escalation Rules
+            <textarea
+              rows={3}
+              value={escalation}
+              onChange={e => setEscalation(e.target.value)}
+            />
+          </label>
+        </FormSection>
+
+        <FormSection title="Completion Criteria" optional>
+          <label>
+            Completion Criteria
+            <textarea
+              rows={3}
+              value={completion}
+              onChange={e => setCompletion(e.target.value)}
+            />
+          </label>
+        </FormSection>
+
+        <FormSection title="Internal Notes" optional>
+          <label>
+            Support Only
+            <textarea
+              rows={3}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </label>
+        </FormSection>
+
+        {error && (
+          <p className="knowledge-error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="form-actions">
+          <a className="btn-secondary" href={cancelHref}>
+            Cancel
+          </a>
+          <button className="btn-primary" type="submit" disabled={submitting}>
+            {submitting ? (isEdit ? 'Updating…' : 'Publishing…') : (isEdit ? 'Update SOP' : 'Publish SOP')}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }

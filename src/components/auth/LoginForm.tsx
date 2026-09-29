@@ -15,7 +15,7 @@ export function LoginForm() {
     if (next.email || next.password) { form.current?.querySelector<HTMLInputElement>(next.email ? '#login-email' : '#login-password')?.focus(); return; }
     submitting.current = true; setBusy(true);
     try { await signIn({ email, password, remember }); setPassword(''); }
-    catch { setError('Unable to sign in. Please try again.'); }
+    catch (err: unknown) { setError(err instanceof Error ? err.message : 'Unable to sign in. Please try again.'); }
     finally { submitting.current = false; setBusy(false); }
   }
   return <form className="auth-form" ref={form} noValidate onSubmit={submit} aria-busy={busy}>

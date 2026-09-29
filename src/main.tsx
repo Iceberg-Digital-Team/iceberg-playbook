@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthProvider'
+import { supabaseAuthAdapter } from './auth/supabaseAuth'
 
 // Preserve the app's hash router while accepting direct auth entry URLs.
 if (!window.location.hash && ['/login', '/forgot-password'].includes(window.location.pathname)) {
@@ -11,6 +12,8 @@ if (!window.location.hash && ['/login', '/forgot-password'].includes(window.loca
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider><App /></AuthProvider>
+    <AuthProvider adapter={supabaseAuthAdapter}>
+      <App />
+    </AuthProvider>
   </StrictMode>,
 )

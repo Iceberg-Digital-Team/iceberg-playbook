@@ -43,11 +43,38 @@ export function GuideHistory({ guide, versions, baseUrl }: { guide: VersionedGui
     </h2>
 
     {isOpen && <div id="guide-history-panel" className="guide-history-panel" role="region" aria-labelledby="guide-history-heading">
-      <ol className="guide-history">{visibleVersions.map(version => <li key={version.id}>
-        <div className="guide-version-line"><strong>v{formatGuideVersion(version.versionNumber)}</strong><span>{formatGuideDate(version.createdAt)}</span><span>{version.createdBy}</span>
-          {version.id === guide.currentVersionId ? <span className="guide-current">Current Version</span> : <a href={`${baseUrl}?version=${encodeURIComponent(version.id)}`}>View Version <span className="home-sr-only">{formatGuideVersion(version.versionNumber)}</span></a>}
-        </div><p>{version.changeSummary}</p>
-      </li>)}</ol>
+      <ol className="guide-history">{visibleVersions.map(version => {
+        let restoredFromLabel: string | null = null;
+        if (version.restoredFromVersionId) {
+          const sourceVersion = versions.find(v => v.id === version.restoredFromVersionId);
+          restoredFromLabel = sourceVersion
+            ? `Restored from v${formatGuideVersion(sourceVersion.versionNumber)}`
+            : 'Restored version';
+        }
+
+        return (
+          <li key={version.id}>
+            <div className="guide-version-line">
+              <strong>v{formatGuideVersion(version.versionNumber)}</strong>
+              <span>{formatGuideDate(version.createdAt)}</span>
+              <span>{version.createdBy}</span>
+              {restoredFromLabel && (
+                <span className="guide-restored-tag" style={{ color: 'var(--secondary-text)', fontSize: '12px' }}>
+                  ({restoredFromLabel})
+                </span>
+              )}
+              {version.id === guide.currentVersionId ? (
+                <span className="guide-current">Current Version</span>
+              ) : (
+                <a href={`${baseUrl}?version=${encodeURIComponent(version.id)}`}>
+                  View Version <span className="home-sr-only">{formatGuideVersion(version.versionNumber)}</span>
+                </a>
+              )}
+            </div>
+            <p>{version.changeSummary}</p>
+          </li>
+        );
+      })}</ol>
 
       {hasOlder && <div className="guide-history-older-wrap">
         <button
@@ -65,13 +92,69 @@ export function GuideHistory({ guide, versions, baseUrl }: { guide: VersionedGui
   </section>;
 }
 
-export function RestoreGuideDialog({ current, target, onCancel, onRestore }: { current: number; target: number; onCancel: () => void; onRestore: () => void }) {
+export function RestoreGuideDialog({
+  current,
+  target,
+  busy = false,
+  onCancel,
+  onRestore
+}: {
+  current: number;
+  target: number;
+  busy?: boolean;
+  onCancel: () => void;
+  onRestore: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const dialog = ref.current!; dialog.showModal(); return () => dialog.close(); }, []);
-  return <dialog ref={ref} className="guide-restore-dialog" aria-labelledby="restore-title" aria-describedby="restore-description" onCancel={event => { event.preventDefault(); onCancel(); }}>
-    <h2 id="restore-title">Restore version {formatGuideVersion(target)}?</h2>
-    <p>Current: v{formatGuideVersion(current)} · Restore: v{formatGuideVersion(target)}</p>
-    <p id="restore-description">This will create a new version based on v{formatGuideVersion(target)}. No version history will be deleted.</p>
-    <div className="knowledge-actions"><button autoFocus className="btn-secondary" onClick={onCancel}>Cancel</button><button className="btn-primary" onClick={onRestore}>Restore Version</button></div>
-  </dialog>;
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
+    return () => {
+      if (dialog && dialog.open) {
+        dialog.close();
+      }
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={ref}
+      className="guide-restore-dialog"
+      aria-labelledby="restore-title"
+      aria-describedby="restore-description"
+      onCancel={event => {
+        event.preventDefault();
+        if (!busy) onCancel();
+      }}
+    >
+      <h2 id="restore-title">Restore this version?</h2>
+      <p style={{ margin: '8px 0', fontSize: '13px', color: 'var(--secondary-text)' }}>
+        Current: v{formatGuideVersion(current)} · Restoring: v{formatGuideVersion(target)}
+      </p>
+      <p id="restore-description">
+        This will not overwrite existing history. A new Guide version will be created from this snapshot.
+      </p>
+      <div className="knowledge-actions">
+        <button
+          type="button"
+          autoFocus
+          className="btn-secondary"
+          onClick={onCancel}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={onRestore}
+          disabled={busy}
+        >
+          {busy ? 'Restoring…' : 'Restore Version'}
+        </button>
+      </div>
+    </dialog>
+  );
 }

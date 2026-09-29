@@ -23,7 +23,7 @@ export function StepEditor({ steps, initialSteps, onChange }: { steps: Omit<Step
         value={step.screenshot || ''}
         initialValue={initialScreenshot}
         showPreviewImage
-        onChange={(url) => update(i, 'screenshot', url)}
+        onChange={(url, _file, storageKey) => update(i, 'screenshot', storageKey || url)}
       />
     </label>
     {(['importantNote','estimatedTime','videoLink','pdfReference'] as const).map(field=><label key={field}>{{importantNote:'Important Note',estimatedTime:'Estimated Time',videoLink:'Video Reference URL',pdfReference:'PDF Reference URL'}[field]}<input aria-label={`Step ${i+1} ${field}`} value={step[field]||''} onChange={e=>update(i,field,e.target.value)}/></label>)}

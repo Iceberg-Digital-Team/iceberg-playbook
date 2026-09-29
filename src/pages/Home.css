@@ -35,6 +35,136 @@
 .home-playbook .home-link-arrow { margin-left: auto; width: 13px; }
 .home-link-arrow { flex-shrink: 0; color: var(--secondary-text); transition: transform 160ms, color 160ms; }
 .home-playbook:hover .home-link-arrow, .home-solution:hover .home-link-arrow { transform: translateX(2px); color: var(--iceberg-magenta); }
+
+/* Quick Access Section */
+.home-quick-access {
+  margin-top: 42px;
+}
+.home-section-subtitle {
+  margin: 4px 0 0;
+  font-size: .929rem;
+  color: var(--secondary-text);
+  line-height: 1.4;
+}
+.home-quick-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.home-quick-card {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 20px;
+  border-radius: 10px;
+  text-decoration: none;
+  min-height: 156px;
+  box-sizing: border-box;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+.home-quick-card:hover {
+  transform: translateY(-2px);
+}
+.home-quick-card-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.home-quick-card-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -.015em;
+  margin-bottom: 6px;
+  line-height: 1.25;
+}
+.home-quick-card-desc {
+  font-size: .929rem;
+  line-height: 1.45;
+  margin-bottom: 16px;
+  flex: 1;
+}
+.home-quick-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .88rem;
+  font-weight: 600;
+  margin-top: auto;
+}
+.home-quick-card-action svg {
+  transition: transform 160ms ease;
+}
+.home-quick-card:hover .home-quick-card-action svg {
+  transform: translateX(3px);
+}
+
+/* Issues Card (Magenta Accent) */
+.home-quick-card-issues {
+  background: var(--iceberg-magenta);
+  color: #ffffff;
+  border: 1px solid var(--iceberg-magenta);
+}
+.home-quick-card-issues:hover {
+  box-shadow: 0 6px 20px rgba(230, 0, 126, 0.28);
+}
+.home-quick-card-issues .home-quick-card-icon {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+.home-quick-card-issues .home-quick-card-desc {
+  color: rgba(255, 255, 255, 0.9);
+}
+.home-quick-card-issues .home-quick-card-action {
+  color: #ffffff;
+}
+
+/* Guides Card (Black / Dark Accent) */
+.home-quick-card-guides {
+  background: var(--primary-black);
+  color: var(--primary-white);
+  border: 1px solid #222222;
+}
+.home-quick-card-guides:hover {
+  border-color: #444444;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.home-quick-card-guides .home-quick-card-icon {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--primary-white);
+}
+.home-quick-card-guides .home-quick-card-desc {
+  color: rgba(255, 255, 255, 0.72);
+}
+.home-quick-card-guides .home-quick-card-action {
+  color: var(--primary-white);
+}
+
+/* SOPs Card (Light / Off-white) */
+.home-quick-card-sops {
+  background: var(--primary-white);
+  color: var(--primary-text);
+  border: 1px solid var(--border);
+}
+.home-quick-card-sops:hover {
+  background: var(--light-background);
+  border-color: #bbbbbb;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+}
+.home-quick-card-sops .home-quick-card-icon {
+  background: var(--light-background);
+  color: var(--primary-text);
+  border: 1px solid var(--border);
+}
+.home-quick-card-sops .home-quick-card-desc {
+  color: var(--secondary-text);
+}
+.home-quick-card-sops .home-quick-card-action {
+  color: var(--primary-text);
+}
+
 .home-recent { margin-top: 42px; }
 .home-solutions { padding: 0; margin: 0; list-style: none; }
 .home-solutions li { border-bottom: 1px solid var(--border); }
@@ -58,6 +188,7 @@
   .home-layout .search-shortcut-btn { display: none; }
   .home-hero { margin-bottom: 36px; }
   .home-search { margin-top: 24px; gap: 12px; padding-left: 16px; }
+  .home-quick-cards { grid-template-columns: 1fr; gap: 12px; }
   .home-recent { margin-top: 32px; }
   .home-solution { grid-template-columns: minmax(0, 1fr) auto 16px; gap: 4px 12px; padding: 16px 0; }
   .home-solution-code { grid-column: 1; grid-row: 1; }
@@ -72,6 +203,7 @@
   .home-playbooks { gap: 8px; }
   .home-playbook { gap: 8px; padding: 14px 10px; }
   .home-playbook .home-link-arrow { display: none; }
+  .home-quick-card { padding: 18px 16px; min-height: 140px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .home-page *, .home-layout .sidebar, .home-layout .nav-item { transition: none; }

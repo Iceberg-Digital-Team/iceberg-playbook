@@ -1,7 +1,8 @@
-import { useState, useRef, useId, type DragEvent, type ChangeEvent } from 'react';
-import { FileText } from 'lucide-react';
+import { useState, useRef, useId, useEffect, type DragEvent, type ChangeEvent } from 'react';
+import { FileText, Loader2 } from 'lucide-react';
 import { formatFileSize, parseMediaMetadata, registerMediaMetadata, type FileMetadata } from './mediaUtils';
 import { safeMediaUrl } from '../../guideTemplate';
+import { uploadMedia, validateMediaFile, getSignedMediaUrl, isStorageKey } from '../../services/mediaService';
 
 export interface MediaUploadFieldProps {
   type: 'video' | 'pdf' | 'image';
@@ -11,8 +12,11 @@ export interface MediaUploadFieldProps {
   buttonText: string;
   value?: string;
   initialValue?: string;
+  storageKey?: string;
   fileMeta?: FileMetadata | null;
-  onChange: (url: string, file: File | null) => void;
+  domain?: 'guides' | 'issues' | 'sops';
+  entityId?: string;
+  onChange: (url: string, file: File | null, storageKey?: string) => void;
   showPreviewImage?: boolean;
 }
 
@@ -24,50 +28,63 @@ export function MediaUploadField({
   buttonText,
   value,
   initialValue,
+  storageKey,
   fileMeta,
+  domain = 'guides',
+  entityId,
   onChange,
   showPreviewImage = false,
 }: MediaUploadFieldProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [previewUrl, setPreviewUrl] = useState<string>(value || '');
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
 
-  // Validate file against accepted extensions and mime types
-  const validateFile = (file: File): boolean => {
-    const ext = `.${file.name.split('.').pop()?.toLowerCase() || ''}`;
-    const mime = file.type.toLowerCase();
+  // If value is a storage key, resolve signed preview at runtime
+  useEffect(() => {
+    let active = true;
+    if (value && isStorageKey(value)) {
+      getSignedMediaUrl(value)
+        .then(signed => {
+          if (active) setPreviewUrl(signed);
+        })
+        .catch(() => {
+          if (active) setPreviewUrl(value);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [value]);
 
-    if (type === 'video') {
-      const validExts = ['.mp4', '.webm', '.mov'];
-      const validMimes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska'];
-      if (!validExts.includes(ext) && !validMimes.includes(mime)) {
-        setError('Accepted formats: MP4, WebM, MOV');
-        return false;
-      }
-    } else if (type === 'pdf') {
-      if (ext !== '.pdf' && mime !== 'application/pdf') {
-        setError('Accepted format: PDF');
-        return false;
-      }
-    } else if (type === 'image') {
-      const validExts = ['.png', '.jpg', '.jpeg', '.webp'];
-      const validMimes = ['image/png', 'image/jpeg', 'image/webp'];
-      if (!validExts.includes(ext) && !validMimes.includes(mime)) {
-        setError('Accepted formats: PNG, JPG, WebP');
-        return false;
-      }
+  const handleSelectFile = async (file: File) => {
+    const validation = validateMediaFile(file, type);
+    if (!validation.valid) {
+      setError(validation.error || 'Invalid file.');
+      return;
     }
 
     setError('');
-    return true;
-  };
+    setIsUploading(true);
 
-  const handleSelectFile = (file: File) => {
-    if (!validateFile(file)) return;
-    const objectUrl = `${URL.createObjectURL(file)}#name=${encodeURIComponent(file.name)}&size=${file.size}`;
-    registerMediaMetadata(objectUrl, { name: file.name, size: file.size });
-    onChange(objectUrl, file);
+    try {
+      const result = await uploadMedia(file, {
+        domain,
+        entityId,
+        mediaType: type
+      });
+
+      registerMediaMetadata(result.signedUrl, { name: file.name, size: file.size });
+      registerMediaMetadata(result.storageKey, { name: file.name, size: file.size });
+      setPreviewUrl(result.signedUrl);
+      onChange(result.signedUrl, file, result.storageKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -111,28 +128,30 @@ export function MediaUploadField({
     if (inputRef.current) {
       inputRef.current.value = '';
     }
-    onChange('', null);
+    setPreviewUrl('');
+    onChange('', null, '');
   };
 
   const handleUndoRemove = () => {
     if (initialValue) {
       setError('');
-      onChange(initialValue, null);
+      setPreviewUrl(initialValue);
+      onChange(initialValue, null, storageKey);
     }
   };
 
-  const hasSelectedMedia = Boolean(value && value.trim());
+  const hasSelectedMedia = Boolean((value && value.trim()) || (previewUrl && previewUrl.trim()));
   const isRemoved = Boolean(!hasSelectedMedia && initialValue && initialValue.trim());
   const isReplaced = Boolean(hasSelectedMedia && initialValue && value !== initialValue);
 
   // Metadata determination
-  const parsedMeta = parseMediaMetadata(value, type);
+  const parsedMeta = parseMediaMetadata(previewUrl || value, type);
   const displayName = fileMeta?.name || parsedMeta.name;
   const displaySize = fileMeta?.size ? formatFileSize(fileMeta.size) : parsedMeta.formattedSize;
 
   const replaceButtonText = type === 'video' ? 'Replace Video' : type === 'pdf' ? 'Replace PDF' : 'Replace';
   const removeButtonText = type === 'video' ? 'Remove Video' : type === 'pdf' ? 'Remove PDF' : 'Remove';
-  const safeSrc = safeMediaUrl(value);
+  const safeSrc = safeMediaUrl(previewUrl || value);
 
   return (
     <div className="media-upload-container">
@@ -144,9 +163,18 @@ export function MediaUploadField({
         onChange={handleFileChange}
         style={{ display: 'none' }}
         aria-label={buttonText}
+        disabled={isUploading}
       />
 
-      {hasSelectedMedia ? (
+      {isUploading ? (
+        <div className="media-upload-area is-uploading">
+          <div className="media-upload-content">
+            <Loader2 size={24} className="spin" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
+            <span className="media-drop-text">Uploading {type} to secure storage…</span>
+          </div>
+          <p className="helper-text media-format-text">Please wait while your file is securely uploaded.</p>
+        </div>
+      ) : hasSelectedMedia ? (
         <div className={`media-selected-card ${type === 'video' ? 'media-video-card' : ''}`}>
           {type === 'video' && safeSrc && (
             <div className="media-preview-video-container">
@@ -208,6 +236,7 @@ export function MediaUploadField({
               </button>
             </div>
           </div>
+          {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
         </div>
       ) : isRemoved ? (
         <div className="media-upload-area media-removed-area">
@@ -234,6 +263,7 @@ export function MediaUploadField({
               )}
             </div>
           </div>
+          {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
         </div>
       ) : (
         <div

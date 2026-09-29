@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Search, ArrowRight, MessageSquare, Briefcase, Home as HomeIcon, Video, Mic, Globe, type LucideIcon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, ArrowRight, MessageSquare, Briefcase, Home as HomeIcon, Video, Mic, Globe, AlertCircle, BookOpen, ClipboardList, type LucideIcon } from 'lucide-react';
 import { useRouter } from '../router';
-import { getPlaybooks, getIssues, getGuides, getSOPs } from '../data';
+import { listPlaybooks } from '../services/playbookService';
+import type { Playbook } from '../data';
+import { listRecentSolutions, type RecentSolutionItem } from '../services/homeService';
 import './Home.css';
 
 const iconMap: Record<string, LucideIcon> = { MessageSquare, Briefcase, Home: HomeIcon, Video, Mic, Globe };
@@ -10,15 +12,53 @@ interface HomeProps { onSearchTrigger: (query: string) => void; }
 export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
   const { navigate } = useRouter();
   const [query, setQuery] = useState('');
-  const playbooks = getPlaybooks();
-  const recentItems = [
-    ...getIssues().map(item => ({ ...item, type: 'Issue', folder: 'issues' })),
-    ...getGuides().map(item => ({ ...item, type: 'Guide', folder: 'guides' })),
-    ...getSOPs().map(item => ({ ...item, type: 'SOP', folder: 'sops' })),
-  ]
-    .filter(item => item.status === 'Verified' && playbooks.some(pb => pb.id === item.playbookId))
-    .sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
-    .slice(0, 4);
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [recentItems, setRecentItems] = useState<RecentSolutionItem[]>([]);
+  const [recentLoading, setRecentLoading] = useState(true);
+  const [recentError, setRecentError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    listPlaybooks()
+      .then(items => {
+        if (active) {
+          setPlaybooks(items);
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setError(err instanceof Error ? err.message : 'Unable to load Playbooks.');
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    listRecentSolutions()
+      .then(items => {
+        if (active) {
+          setRecentItems(items);
+          setRecentLoading(false);
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setRecentError(err instanceof Error ? err.message : 'Unable to load recent solutions.');
+          setRecentLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
@@ -46,32 +86,89 @@ export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
           <h2 id="home-playbooks-title">Playbooks</h2>
           <a href="#/playbooks">View all <ArrowRight size={15} aria-hidden="true" /></a>
         </div>
-        {playbooks.length ? <div className="home-playbooks">
-          {playbooks.slice(0, 4).map(pb => {
-            const Icon = iconMap[pb.icon] || MessageSquare;
-            return <a key={pb.id} className="home-playbook" href={`#/playbooks/${pb.slug}`}>
-              <span className="home-playbook-icon"><Icon size={21} strokeWidth={1.5} aria-hidden="true" /></span>
-              <span>{pb.name}</span>
-              <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
-            </a>;
-          })}
-        </div> : <p className="home-empty">Your team’s playbooks will appear here. <a href="#/create/playbook">Create a playbook</a></p>}
+        {loading ? (
+          <p className="home-empty">Loading playbooks…</p>
+        ) : error ? (
+          <p className="home-empty" role="alert">{error}</p>
+        ) : playbooks.length ? (
+          <div className="home-playbooks">
+            {playbooks.slice(0, 4).map(pb => {
+              const Icon = iconMap[pb.icon] || MessageSquare;
+              return <a key={pb.id} className="home-playbook" href={`#/playbooks/${pb.slug}`}>
+                <span className="home-playbook-icon"><Icon size={21} strokeWidth={1.5} aria-hidden="true" /></span>
+                <span>{pb.name}</span>
+                <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
+              </a>;
+            })}
+          </div>
+        ) : (
+          <p className="home-empty">Your team’s playbooks will appear here. <a href="#/create/playbook">Create a playbook</a></p>
+        )}
+      </section>
+      <section className="home-quick-access" aria-labelledby="home-quick-access-title">
+        <div className="home-section-heading">
+          <div>
+            <h2 id="home-quick-access-title">Quick access</h2>
+            <p className="home-section-subtitle">Jump to the information you need.</p>
+          </div>
+        </div>
+        <div className="home-quick-cards">
+          <a className="home-quick-card home-quick-card-issues" href="#/search?type=Issues">
+            <span className="home-quick-card-icon">
+              <AlertCircle size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="home-quick-card-title">Issues</span>
+            <span className="home-quick-card-desc">Track reported problems.</span>
+            <span className="home-quick-card-action">
+              Open <ArrowRight size={14} aria-hidden="true" />
+            </span>
+          </a>
+
+          <a className="home-quick-card home-quick-card-guides" href="#/search?type=Guides">
+            <span className="home-quick-card-icon">
+              <BookOpen size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="home-quick-card-title">Guides</span>
+            <span className="home-quick-card-desc">Open solution guides.</span>
+            <span className="home-quick-card-action">
+              Open <ArrowRight size={14} aria-hidden="true" />
+            </span>
+          </a>
+
+          <a className="home-quick-card home-quick-card-sops" href="#/search?type=SOPs">
+            <span className="home-quick-card-icon">
+              <ClipboardList size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="home-quick-card-title">SOPs</span>
+            <span className="home-quick-card-desc">View standard procedures.</span>
+            <span className="home-quick-card-action">
+              Open <ArrowRight size={14} aria-hidden="true" />
+            </span>
+          </a>
+        </div>
       </section>
       <section className="home-recent" aria-labelledby="home-recent-title">
         <div className="home-section-heading"><h2 id="home-recent-title">Recent solutions</h2></div>
-        {recentItems.length ? <ul className="home-solutions">
-          {recentItems.map(item => {
-            const pb = playbooks.find(book => book.id === item.playbookId)!;
-            return <li key={`${item.folder}-${item.id}`}>
-              <a className="home-solution" href={`#/playbooks/${pb.slug}/${item.folder}/${encodeURIComponent(item.id)}`}>
-                <span className="home-solution-code">{item.id}</span>
-                <span className="home-solution-title">{item.title}</span>
-                <span className="home-solution-type">{item.type}</span>
-                <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
-              </a>
-            </li>;
-          })}
-        </ul> : <p className="home-empty">Verified solutions will appear here as your team documents them.</p>}
+        {recentLoading ? (
+          <p className="home-empty">Loading recent solutions…</p>
+        ) : recentError ? (
+          <p className="home-empty" role="alert">{recentError}</p>
+        ) : recentItems.length ? (
+          <ul className="home-solutions">
+            {recentItems.map(item => (
+              <li key={`${item.folder}-${item.id}`}>
+                <a className="home-solution" href={item.href}>
+                  <span className="home-solution-code">{item.id}</span>
+                  <span className="home-solution-title">{item.title}</span>
+                  <span className="home-solution-type">{item.type}</span>
+                  <ArrowRight className="home-link-arrow" size={16} aria-hidden="true" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="home-empty">Verified solutions will appear here as your team documents them.</p>
+        )}
       </section>
     </div>
   );

@@ -69,7 +69,8 @@ export function parseMediaMetadata(url?: string, type?: 'video' | 'pdf' | 'image
       if (seg) name = seg;
     }
   } catch {
-    name = url;
+    const seg = url.split('/').pop() || url;
+    name = seg;
   }
 
   if (size === undefined && name) {
