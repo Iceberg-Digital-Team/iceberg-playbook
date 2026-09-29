@@ -14,6 +14,8 @@ async function loadTs(relativePath) {
 }
 const samples = await importTs('src/sampleData.ts', 'search-samples');
 const core = await loadTs('../src/search/searchCore.ts');
+const { getRowJiraCode, resolveSearchType } = core;
+const { parseHash } = await importTs('src/router.ts', 'router-search-quick');
 
 const playbooks = [{ id: 'pb-a', name: 'Alphaplatform' }, { id: 'pb-b', name: 'Betaplatform' }];
 const issue = o => ({ playbookId: 'pb-a', title: '', summary: '', symptoms: [], errorMessage: '', ...o });
@@ -218,7 +220,7 @@ test('no resolveTroubleshooting or matchTroubleshootingIssue runtime exports exi
     assert.equal(typeof core.matchTroubleshootingIssue, 'undefined', 'matchTroubleshootingIssue must be removed from searchCore');
     assert.equal(typeof core.TROUBLESHOOTING_STOPWORDS, 'undefined', 'TROUBLESHOOTING_STOPWORDS must be removed from searchCore');
 
-    const searchService = await importTs('src/search/searchService.ts', 'search-service');
+    const searchService = await importTs('src/search/searchService.ts', 'search-service-legacy');
     assert.equal(typeof searchService.resolveTroubleshooting, 'undefined', 'resolveTroubleshooting must be removed from searchService');
 });
 
@@ -241,4 +243,124 @@ test('Search domains strictly remain Playbook, Issue, Guide, and SOP only', () =
         assert.ok(validDomains.has(domain), `Search result ${item.id} has invalid domain ${domain}`);
     }
 });
+
+test('Issue with Jira Code is discoverable and exact Jira Code matches rank first', () => {
+    const set = {
+        issues: [
+            issue({ id: 'ISS-10', title: 'Payment timeout', jiraCode: 'NEW-001' }),
+            issue({ id: 'ISS-11', title: 'Mentioning new-001 in title' }),
+        ],
+    };
+    for (const q of ['NEW-001', 'new-001', '  NEW-001  ']) {
+        const found = ids(q, set);
+        assert.equal(found[0], 'ISS-10');
+        assert.ok(found.includes('ISS-11'));
+    }
+});
+
+test('Guide linked to Issue is discoverable by Jira Code without duplicating Jira Code in Guide', () => {
+    const set = {
+        issues: [
+            issue({ id: 'ISS-20', title: 'Auth loop', jiraCode: 'SEC-404' }),
+            issue({ id: 'ISS-21', title: 'Unrelated issue' }),
+        ],
+        guides: [
+            guide({ id: 'G-20', issueId: 'ISS-20', title: 'Resolve Auth Loop' }),
+            guide({ id: 'G-21', issueId: 'ISS-21', title: 'Other Guide' }),
+        ],
+    };
+
+    // Guide does not store jiraCode
+    assert.equal('jiraCode' in set.guides[0], false);
+    assert.equal('jira_code' in set.guides[0], false);
+
+    // Searching Jira Code returns Issue first, and its linked Guide as well
+    const found = ids('SEC-404', set);
+    assert.equal(found[0], 'ISS-20');
+    assert.ok(found.includes('G-20'));
+    assert.ok(!found.includes('G-21'));
+    assert.ok(!found.includes('ISS-21'));
+});
+
+test('Issue result exposes Jira Code for rendering and omits when absent', () => {
+    const withCode = issue({ id: 'ISS-30', title: 'Issue with Jira', jiraCode: 'NEW-001' });
+    assert.equal(getRowJiraCode(withCode), 'NEW-001');
+
+    const withoutCode = issue({ id: 'ISS-31', title: 'Issue without Jira', jiraCode: undefined });
+    assert.equal(getRowJiraCode(withoutCode), undefined);
+
+    const withEmptyCode = issue({ id: 'ISS-32', title: 'Issue empty Jira', jiraCode: '   ' });
+    assert.equal(getRowJiraCode(withEmptyCode), undefined);
+});
+
+test('Guide result derives Jira Code from linked Issue without duplicating in Guide persistence', () => {
+    const linkedIssueWithJira = issue({ id: 'ISS-40', title: 'Parent Issue', jiraCode: 'NEW-002' });
+    const linkedIssueNoJira = issue({ id: 'ISS-41', title: 'Parent Issue No Jira' });
+    const guideItem = guide({ id: 'G-40', issueId: 'ISS-40', title: 'Guide Title' });
+
+    // Derives from linked Issue with Jira
+    assert.equal(getRowJiraCode(guideItem, linkedIssueWithJira), 'NEW-002');
+
+    // Returns undefined when linked Issue has no Jira code
+    assert.equal(getRowJiraCode(guideItem, linkedIssueNoJira), undefined);
+
+    // Returns undefined when linked Issue is not provided
+    assert.equal(getRowJiraCode(guideItem), undefined);
+
+    // Guide object itself never holds jiraCode / jira_code
+    assert.equal('jiraCode' in guideItem, false);
+    assert.equal('jira_code' in guideItem, false);
+});
+
+test('Playbook and SOP results do NOT receive Jira labels even if extra fields present', () => {
+    const playbookItem = { id: 'pb-1', slug: 'pb-1', name: 'PB 1', code: 'PB', jiraCode: 'NEW-003' };
+    const sopItem = sop({ id: 'SOP-50', title: 'SOP Title', jiraCode: 'NEW-003' });
+
+    assert.equal(getRowJiraCode(playbookItem), undefined);
+    assert.equal(getRowJiraCode(sopItem), undefined);
+});
+
+test('Home Quick Access card routes parse cleanly and preserve existing Search routing', () => {
+    // Issues card route
+    const issuesRoute = parseHash('#/search?type=Issues');
+    assert.equal(issuesRoute.path, '/search');
+    assert.equal(issuesRoute.params.type, 'Issues');
+
+    // Guides card route
+    const guidesRoute = parseHash('#/search?type=Guides');
+    assert.equal(guidesRoute.path, '/search');
+    assert.equal(guidesRoute.params.type, 'Guides');
+
+    // SOPs card route
+    const sopsRoute = parseHash('#/search?type=SOPs');
+    assert.equal(sopsRoute.path, '/search');
+    assert.equal(sopsRoute.params.type, 'SOPs');
+
+    // Existing Search route without query parameters
+    const baseRoute = parseHash('#/search');
+    assert.equal(baseRoute.path, '/search');
+    assert.deepEqual(baseRoute.params, {});
+});
+
+test('Search initializes domain filter from type query parameter and handles case-insensitivity', () => {
+    assert.equal(resolveSearchType('Issues'), 'Issues');
+    assert.equal(resolveSearchType('issues'), 'Issues');
+    assert.equal(resolveSearchType('Guides'), 'Guides');
+    assert.equal(resolveSearchType('guides'), 'Guides');
+    assert.equal(resolveSearchType('SOPs'), 'SOPs');
+    assert.equal(resolveSearchType('sops'), 'SOPs');
+    assert.equal(resolveSearchType('Playbooks'), 'Playbooks');
+    assert.equal(resolveSearchType('playbooks'), 'Playbooks');
+});
+
+test('Search defaults invalid or missing type query parameter to All', () => {
+    assert.equal(resolveSearchType('All'), 'All');
+    assert.equal(resolveSearchType('invalid'), 'All');
+    assert.equal(resolveSearchType('unknown-domain'), 'All');
+    assert.equal(resolveSearchType(''), 'All');
+    assert.equal(resolveSearchType('   '), 'All');
+    assert.equal(resolveSearchType(undefined), 'All');
+    assert.equal(resolveSearchType(null), 'All');
+});
+
 

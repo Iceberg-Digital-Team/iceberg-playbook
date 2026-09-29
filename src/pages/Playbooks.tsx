@@ -96,7 +96,7 @@ export function Playbooks() {
                 <p>{p.description}</p>
                 <div className="tile-footer">
                   <span>
-                    {p.issueCount} Issues · {p.guideCount} Guides · {p.sopCount} SOPs
+                    {p.activeIssuesCount ?? p.issueCount} Issues · {p.activeGuidesCount ?? p.guideCount} Guides · {p.activeSopsCount ?? p.sopCount} SOPs
                   </span>
                   <ArrowRight size={17} />
                 </div>

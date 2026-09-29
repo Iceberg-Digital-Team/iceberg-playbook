@@ -1,9 +1,27 @@
 import { useState, useEffect } from 'react';
 import { PageHeader, SearchField, ContentRow, StateMessage } from '../components/knowledge/ApplicationUI';
 import { getSearchData, executeSearch, type RawSearchData } from '../search/searchService';
+import { resolveSearchType, type SearchDomain } from '../search/searchCore';
+import { useRouter } from '../router';
 
-export function Search({ searchQuery, onSearchChange }: { searchQuery: string; onSearchChange: (q: string) => void }) {
-  const [type, setType] = useState('All');
+export function Search({
+  searchQuery,
+  onSearchChange,
+  routeType,
+}: {
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  routeType?: string;
+}) {
+  const { params } = useRouter();
+  const routeTargetType = resolveSearchType(routeType ?? params?.type);
+  const [type, setType] = useState<SearchDomain>(routeTargetType);
+
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
+    setType(routeTargetType);
+  }, [routeTargetType]);
+
   const [playbook, setPlaybook] = useState('All');
   const [searchData, setSearchData] = useState<RawSearchData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +61,8 @@ export function Search({ searchQuery, onSearchChange }: { searchQuery: string; o
 
   const playbooks = searchData?.playbooks || [];
   const playbookMap = new Map(playbooks.map(p => [p.id, p]));
-  const query = searchQuery.trim().toLowerCase();
+  const issues = searchData?.issues || [];
+  const issueMap = new Map(issues.map(i => [i.id, i]));
   const results = searchData
     ? executeSearch(searchQuery, searchData, { type, playbookId: playbook })
     : [];
@@ -60,7 +79,7 @@ export function Search({ searchQuery, onSearchChange }: { searchQuery: string; o
       />
       <div className="toolbar">
         <div className="segmented" aria-label="Content type">
-          {['All', 'Playbooks', 'Issues', 'Guides', 'SOPs'].map(t => (
+          {(['All', 'Playbooks', 'Issues', 'Guides', 'SOPs'] as const).map(t => (
             <button aria-pressed={type === t} key={t} onClick={() => setType(t)}>
               {t}
             </button>
@@ -106,12 +125,12 @@ export function Search({ searchQuery, onSearchChange }: { searchQuery: string; o
           </p>
           {results.length ? (
             <div className="content-list">
-              {results.map((item, i) => (
+              {results.map(item => (
                 <ContentRow
                   key={item.id}
                   item={item}
                   playbook={'playbookId' in item ? playbookMap.get(item.playbookId) : undefined}
-                  excerpt={!!query && i === 0}
+                  linkedIssue={'issueId' in item && item.issueId ? issueMap.get(item.issueId) : undefined}
                 />
               ))}
             </div>

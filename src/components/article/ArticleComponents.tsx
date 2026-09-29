@@ -9,10 +9,12 @@ export interface ArticleHeaderProps {
   code: string; title: string; status: 'Verified' | 'Draft'; playbookName: string;
   difficulty?: 'Easy' | 'Medium' | 'Advanced'; estimatedTime: string; updatedAt: string;
   authorOrOwner: string; type: 'Issue' | 'Guide' | 'SOP'; connection?: ReactNode; versionLabel?: string;
+  jiraCode?: string;
 }
-export function ArticleHeader({ code, title, status, playbookName, difficulty, estimatedTime, updatedAt, authorOrOwner, type, connection, versionLabel }: ArticleHeaderProps) {
+export function ArticleHeader({ code, title, status, playbookName, difficulty, estimatedTime, updatedAt, authorOrOwner, type, connection, versionLabel, jiraCode }: ArticleHeaderProps) {
   return <header className="article-header"><div className="article-eyebrow"><span>{type}</span><span className="row-code">{code}</span><span>{playbookName}</span></div>
     <h1>{title}</h1>{connection && <div className="article-connection">Solves Issue: {connection}</div>}
+    {jiraCode && <div className="article-connection">Jira Code: {jiraCode}</div>}
     <div className="article-meta"><StatusBadge status={status} />{estimatedTime && <span><Clock size={14} aria-hidden="true" />{estimatedTime}</span>}{difficulty && <DifficultyBadge difficulty={difficulty} />}{versionLabel && <span>{versionLabel}</span>}</div>
     <p className="article-updated">Last updated {updatedAt} by {authorOrOwner}</p>
   </header>;

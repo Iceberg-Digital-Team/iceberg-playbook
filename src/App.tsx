@@ -66,11 +66,13 @@ function WorkspaceApp() {
       case '/playbooks/[slug]/sops/[id]':
         return <SOPDetail />;
       case '/search':
-        return <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
+        return <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} routeType={params.type} />;
       case '/create':
         return <Create />;
       case '/create/issue':
-        return <CreateIssue />;
+        return <CreateIssue key="create-issue" />;
+      case '/issues/[id]/edit':
+        return <CreateIssue key={window.location.hash} />;
       case '/create/guide':
         return <CreateGuide key="create-guide" />;
       case '/guides/[id]/edit':

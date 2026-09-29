@@ -27,11 +27,33 @@ export function isPlaybook(item: ContentItem): item is Playbook {
   return 'slug' in item && 'name' in item;
 }
 
+export type SearchDomain = 'All' | 'Playbooks' | 'Issues' | 'Guides' | 'SOPs';
+
+export function resolveSearchType(rawType?: string | null): SearchDomain {
+  if (!rawType) return 'All';
+  const trimmed = rawType.trim().toLowerCase();
+  const validDomains: SearchDomain[] = ['Playbooks', 'Issues', 'Guides', 'SOPs'];
+  const match = validDomains.find(d => d.toLowerCase() === trimmed);
+  return match || 'All';
+}
+
 export function getItemType(item: ContentItem): 'Playbooks' | 'Issues' | 'Guides' | 'SOPs' {
   if (isPlaybook(item)) return 'Playbooks';
   if ('issueId' in item) return 'Guides';
   if ('owner' in item) return 'SOPs';
   return 'Issues';
+}
+
+export function getRowJiraCode(item: ContentItem, linkedIssue?: Issue): string | undefined {
+  if (isPlaybook(item)) return undefined;
+  if ('owner' in item && !('symptoms' in item)) return undefined; // SOP
+  if ('symptoms' in item || 'errorMessage' in item) {
+    return (item as Issue).jiraCode?.trim() || undefined;
+  }
+  if ('issueId' in item) {
+    return linkedIssue?.jiraCode?.trim() || undefined;
+  }
+  return undefined;
 }
 
 const PUNCTUATION = '()[]{}*\\/.,:;!?"\'`~^+=|<>@#$%&';
@@ -124,6 +146,8 @@ export function searchKnowledge(
 
   for (const { item, originalIndex } of candidates) {
     let idLower = '';
+    let jiraCodeLower = '';
+    let linkedJiraCodeLower = '';
     let titleLower = '';
     let summaryOrPurpose = '';
     let symptomsOrError = '';
@@ -141,6 +165,9 @@ export function searchKnowledge(
 
       if ('symptoms' in item || 'errorMessage' in item) {
         const issue = item as Issue;
+        if (issue.jiraCode) {
+          jiraCodeLower = issue.jiraCode.toLowerCase().trim();
+        }
         const symptoms = (issue.symptoms ?? []).join(' ').toLowerCase();
         const err = (issue.errorMessage ?? '').toLowerCase();
         const ctx = (issue.context ?? '').toLowerCase();
@@ -167,6 +194,10 @@ export function searchKnowledge(
         if (linked) {
           contentParts.push(linked.id.toLowerCase());
           contentParts.push(linked.title.toLowerCase());
+          if (linked.jiraCode) {
+            linkedJiraCodeLower = linked.jiraCode.toLowerCase().trim();
+            contentParts.push(linkedJiraCodeLower);
+          }
         }
         if (guide.steps) {
           for (const s of guide.steps) {
@@ -196,6 +227,7 @@ export function searchKnowledge(
     for (const t of tokens) {
       const matched =
         idLower.includes(t) ||
+        jiraCodeLower.includes(t) ||
         titleLower.includes(t) ||
         symptomsOrError.includes(t) ||
         summaryOrPurpose.includes(t) ||
@@ -213,13 +245,20 @@ export function searchKnowledge(
 
     let score = 0;
 
-    if (tokens.length === 1 && (tokens[0] === idLower || tokens[0] === item.id.toLowerCase())) {
-      score += SEARCH_WEIGHTS.exactCode;
+    if (tokens.length === 1) {
+      const single = tokens[0];
+      if (single === idLower || single === item.id.toLowerCase()) {
+        score += SEARCH_WEIGHTS.exactCode;
+      } else if (jiraCodeLower && single === jiraCodeLower) {
+        score += SEARCH_WEIGHTS.exactCode;
+      } else if (linkedJiraCodeLower && single === linkedJiraCodeLower) {
+        score += SEARCH_WEIGHTS.exactCode;
+      }
     }
 
     for (const t of tokens) {
       let tokenWeight = 0;
-      if (titleLower.includes(t) || idLower.includes(t)) {
+      if (titleLower.includes(t) || idLower.includes(t) || (jiraCodeLower && jiraCodeLower.includes(t))) {
         tokenWeight = Math.max(tokenWeight, SEARCH_WEIGHTS.title);
       }
       if (symptomsOrError.includes(t)) {

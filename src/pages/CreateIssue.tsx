@@ -3,27 +3,94 @@ import { ArrowLeft, Plus } from 'lucide-react';
 import { useRouter } from '../router';
 import type { Issue, Attachment, Playbook } from '../data';
 import { listPlaybooks } from '../services/playbookService';
-import { createIssue } from '../services/issueService';
-import { PageHeader, FormSection } from '../components/knowledge/ApplicationUI';
+import { createIssue, getIssueById, updateIssue } from '../services/issueService';
+import { PageHeader, FormSection, StateMessage } from '../components/knowledge/ApplicationUI';
 import { StringList, revealInvalid } from '../components/knowledge/EditorFields';
 
 export function CreateIssue() {
+  const { path, params } = useRouter();
+  const isEdit = path === '/issues/[id]/edit';
+  const [initial, setInitial] = useState<Issue | null | undefined>(isEdit ? undefined : null);
+  const [loading, setLoading] = useState(isEdit && Boolean(params.id));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (isEdit && params.id) {
+      getIssueById(params.id)
+        .then(issue => {
+          if (!active) return;
+          setInitial(issue);
+          setLoading(false);
+        })
+        .catch(err => {
+          if (!active) return;
+          setError(err instanceof Error ? err.message : 'Failed to load Issue.');
+          setLoading(false);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [isEdit, params.id]);
+
+  if (loading) {
+    return (
+      <div className="editor">
+        <StateMessage title="Loading Issue…">
+          Retrieving issue for editing…
+        </StateMessage>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="editor">
+        <StateMessage
+          error
+          title="Unable to load Issue"
+          action={<a href="#/playbooks">Back to Playbooks</a>}
+        >
+          {error}
+        </StateMessage>
+      </div>
+    );
+  }
+
+  if (isEdit && !initial) {
+    return (
+      <div className="editor">
+        <StateMessage
+          title="Issue not found"
+          action={<a href="#/playbooks">Back to Playbooks</a>}
+        />
+      </div>
+    );
+  }
+
+  return <IssueEditor key={initial?.id || 'new'} initial={initial || undefined} />;
+}
+
+function IssueEditor({ initial }: { initial?: Issue }) {
+  const isEdit = Boolean(initial);
   const { navigate, params } = useRouter();
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
   const [playbooksLoading, setPlaybooksLoading] = useState(true);
-  const [playbookId, setPlaybookId] = useState(params.playbook || '');
-  const [title, setTitle] = useState('');
-  const [summary, setSummary] = useState('');
-  const [status, setStatus] = useState<Issue['status']>('Draft');
-  const [difficulty, setDifficulty] = useState<Issue['difficulty']>('Medium');
-  const [time, setTime] = useState('');
-  const [symptoms, setSymptoms] = useState<string[]>(['']);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [context, setContext] = useState('');
-  const [area, setArea] = useState('');
-  const [information, setInformation] = useState<string[]>([]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [notes, setNotes] = useState('');
+  const [playbookId, setPlaybookId] = useState(initial?.playbookId || params.playbook || '');
+  const [title, setTitle] = useState(initial?.title || '');
+  const [summary, setSummary] = useState(initial?.summary || '');
+  const [jiraCode, setJiraCode] = useState(initial?.jiraCode || '');
+  const [status, setStatus] = useState<Issue['status']>(initial?.status || 'Draft');
+  const [difficulty, setDifficulty] = useState<Issue['difficulty']>(initial?.difficulty || 'Medium');
+  const [time, setTime] = useState(initial?.estimatedTime || '');
+  const [symptoms, setSymptoms] = useState<string[]>(initial?.symptoms?.length ? initial.symptoms : ['']);
+  const [errorMessage, setErrorMessage] = useState(initial?.errorMessage || '');
+  const [context, setContext] = useState(initial?.context || '');
+  const [area, setArea] = useState(initial?.affectedArea || '');
+  const [information, setInformation] = useState<string[]>(initial?.informationToCollect || []);
+  const [attachments, setAttachments] = useState<Attachment[]>(initial?.attachments || []);
+  const [notes, setNotes] = useState(initial?.internalNotes || '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -34,7 +101,7 @@ export function CreateIssue() {
         if (!active) return;
         setPlaybooks(items);
         setPlaybooksLoading(false);
-        if (items.length > 0) {
+        if (!isEdit && items.length > 0) {
           setPlaybookId(current =>
             current || (params.playbook && items.some(p => p.id === params.playbook) ? params.playbook : items[0].id)
           );
@@ -49,7 +116,7 @@ export function CreateIssue() {
     return () => {
       active = false;
     };
-  }, [params.playbook]);
+  }, [isEdit, params.playbook]);
 
   const pb = playbooks.find(p => p.id === playbookId);
 
@@ -66,38 +133,69 @@ export function CreateIssue() {
     setError('');
     setSaving(true);
     try {
-      const issue = await createIssue({
-        playbookId,
-        title: title.trim(),
-        summary: summary.trim(),
-        status,
-        difficulty,
-        estimatedTime: time.trim(),
-        symptoms: symptoms.filter(s => s.trim()),
-        errorMessage: errorMessage.trim(),
-        context: context.trim(),
-        affectedArea: area.trim(),
-        informationToCollect: information.filter(s => s.trim()),
-        attachments: attachments.filter(a => a.url.trim()),
-        internalNotes: notes.trim(),
-      });
-      const targetPb = playbooks.find(p => p.id === playbookId);
-      navigate(`/playbooks/${targetPb?.slug || playbookId}/issues/${encodeURIComponent(issue.id)}`);
+      if (isEdit && initial) {
+        const updated = await updateIssue({
+          id: initial.id,
+          title: title.trim(),
+          summary: summary.trim(),
+          jiraCode: jiraCode.trim() || undefined,
+          status,
+          difficulty,
+          estimatedTime: time.trim(),
+          symptoms: symptoms.filter(s => s.trim()),
+          errorMessage: errorMessage.trim(),
+          context: context.trim(),
+          affectedArea: area.trim(),
+          informationToCollect: information.filter(s => s.trim()),
+          attachments: attachments.filter(a => a.url.trim()),
+          internalNotes: notes.trim(),
+        });
+        const targetPb = playbooks.find(p => p.id === playbookId);
+        navigate(`/playbooks/${targetPb?.slug || playbookId}/issues/${encodeURIComponent(updated.id)}`);
+      } else {
+        const issue = await createIssue({
+          playbookId,
+          title: title.trim(),
+          summary: summary.trim(),
+          jiraCode: jiraCode.trim() || undefined,
+          status,
+          difficulty,
+          estimatedTime: time.trim(),
+          symptoms: symptoms.filter(s => s.trim()),
+          errorMessage: errorMessage.trim(),
+          context: context.trim(),
+          affectedArea: area.trim(),
+          informationToCollect: information.filter(s => s.trim()),
+          attachments: attachments.filter(a => a.url.trim()),
+          internalNotes: notes.trim(),
+        });
+        const targetPb = playbooks.find(p => p.id === playbookId);
+        navigate(`/playbooks/${targetPb?.slug || playbookId}/issues/${encodeURIComponent(issue.id)}`);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save the Issue.');
+      setError(e instanceof Error ? e.message : isEdit ? 'Could not update the Issue.' : 'Could not save the Issue.');
     } finally {
       setSaving(false);
     }
   };
 
+  const cancelHref = isEdit && initial
+    ? `#/playbooks/${pb?.slug || initial.playbookId}/issues/${encodeURIComponent(initial.id)}`
+    : '#/create';
+
   return (
     <div className="editor">
-      <a className="back-link" href="#/create">
-        <ArrowLeft size={14} />Back to Create
+      <a className="back-link" href={cancelHref}>
+        <ArrowLeft size={14} />
+        {isEdit ? 'Back to Issue' : 'Back to Create'}
       </a>
       <PageHeader
-        title="Create Issue"
-        description="Document the problem so Support can identify and investigate it."
+        title={isEdit ? 'Edit Issue' : 'Create Issue'}
+        description={
+          isEdit
+            ? `Update issue details for ${initial?.id}.`
+            : 'Document the problem so Support can identify and investigate it.'
+        }
       />
       <form onSubmit={submit} onInvalid={revealInvalid}>
         <FormSection title="Basic Information">
@@ -106,6 +204,7 @@ export function CreateIssue() {
               Playbook *
               <select
                 required
+                disabled={isEdit}
                 value={playbookId}
                 onChange={e => setPlaybookId(e.target.value)}
               >
@@ -121,7 +220,10 @@ export function CreateIssue() {
             </label>
             <label>
               Issue Code
-              <input readOnly value={`${pb?.code || 'ISS'} — assigned when saved`} />
+              <input
+                readOnly
+                value={isEdit && initial ? initial.id : `${pb?.code || 'ISS'} — assigned when saved`}
+              />
             </label>
           </div>
           <label>
@@ -132,6 +234,15 @@ export function CreateIssue() {
               onChange={e => setTitle(e.target.value)}
               placeholder="e.g. Phone Number Already Registered"
             />
+          </label>
+          <label>
+            Jira Code
+            <input
+              value={jiraCode}
+              onChange={e => setJiraCode(e.target.value)}
+              placeholder="e.g. NEW-001"
+            />
+            <span className="helper-text">Reference to the original Jira ticket, if applicable.</span>
           </label>
           <details className="disclosure">
             <summary>Status & investigation details</summary>
@@ -267,11 +378,11 @@ export function CreateIssue() {
           </p>
         )}
         <div className="form-actions">
-          <a className="btn-secondary" href="#/create">
+          <a className="btn-secondary" href={cancelHref}>
             Cancel
           </a>
           <button className="btn-primary" type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Save Issue'}
+            {saving ? (isEdit ? 'Updating…' : 'Saving…') : isEdit ? 'Update Issue' : 'Save Issue'}
           </button>
         </div>
       </form>

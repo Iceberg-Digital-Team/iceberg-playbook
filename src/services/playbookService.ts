@@ -29,7 +29,23 @@ export interface CreatePlaybookInput {
   id?: string;
 }
 
-export function mapPlaybookRowToPlaybook(row: DatabasePlaybookRow): Playbook {
+export interface PlaybookCounts {
+  issueCount?: number;
+  guideCount?: number;
+  sopCount?: number;
+  activeIssuesCount?: number;
+  activeGuidesCount?: number;
+  activeSopsCount?: number;
+}
+
+export function mapPlaybookRowToPlaybook(
+  row: DatabasePlaybookRow,
+  counts?: PlaybookCounts
+): Playbook {
+  const issueCount = counts?.activeIssuesCount ?? counts?.issueCount ?? 0;
+  const guideCount = counts?.activeGuidesCount ?? counts?.guideCount ?? 0;
+  const sopCount = counts?.activeSopsCount ?? counts?.sopCount ?? 0;
+
   return {
     id: row.id,
     slug: row.slug,
@@ -40,29 +56,126 @@ export function mapPlaybookRowToPlaybook(row: DatabasePlaybookRow): Playbook {
     owner: row.owner || 'Support Team',
     visibility: (row.visibility as 'Internal' | 'Public') || 'Internal',
     updatedAt: row.updated_at || new Date().toISOString(),
-    issueCount: 0,
-    guideCount: 0,
-    sopCount: 0,
+    issueCount,
+    guideCount,
+    sopCount,
+    activeIssuesCount: issueCount,
+    activeGuidesCount: guideCount,
+    activeSopsCount: sopCount,
   };
 }
 
-export async function listPlaybooks(
-  client: SupabaseClient = defaultSupabase
-): Promise<Playbook[]> {
-  const { data, error } = await client
-    .from('playbooks')
-    .select('id, slug, name, code, description, icon, owner, visibility, created_at, updated_at, deleted_at, deleted_by')
-    .is('deleted_at', null)
-    .order('name', { ascending: true });
+export function aggregatePlaybookCounts(
+  issues: Array<{ playbook_id?: string | null; deleted_at?: string | null }>,
+  guides: Array<{ playbook_id?: string | null; deleted_at?: string | null }>,
+  sops: Array<{ playbook_id?: string | null; deleted_at?: string | null }>
+): Record<string, Required<PlaybookCounts>> {
+  const counts: Record<string, Required<PlaybookCounts>> = {};
+
+  const ensureEntry = (id: string): Required<PlaybookCounts> => {
+    if (!counts[id]) {
+      counts[id] = {
+        issueCount: 0,
+        guideCount: 0,
+        sopCount: 0,
+        activeIssuesCount: 0,
+        activeGuidesCount: 0,
+        activeSopsCount: 0,
+      };
+    }
+    return counts[id];
+  };
+
+  for (const item of issues) {
+    if (item.deleted_at == null && item.playbook_id) {
+      const entry = ensureEntry(item.playbook_id);
+      entry.issueCount += 1;
+      entry.activeIssuesCount += 1;
+    }
+  }
+
+  for (const item of guides) {
+    if (item.deleted_at == null && item.playbook_id) {
+      const entry = ensureEntry(item.playbook_id);
+      entry.guideCount += 1;
+      entry.activeGuidesCount += 1;
+    }
+  }
+
+  for (const item of sops) {
+    if (item.deleted_at == null && item.playbook_id) {
+      const entry = ensureEntry(item.playbook_id);
+      entry.sopCount += 1;
+      entry.activeSopsCount += 1;
+    }
+  }
+
+  return counts;
+}
+
+async function fetchActiveChildRows(
+  client: SupabaseClient,
+  table: 'issues' | 'guides' | 'sops',
+  playbookId?: string
+): Promise<Array<{ playbook_id: string; deleted_at: string | null }>> {
+  let query: any = client.from(table).select('playbook_id, deleted_at');
+  if (playbookId && typeof query.eq === 'function') {
+    query = query.eq('playbook_id', playbookId);
+  }
+  if (typeof query.is === 'function') {
+    query = query.is('deleted_at', null);
+  }
+
+  const { data, error } = await (typeof query.order === 'function' ? query.order('id') : query);
 
   if (error) {
     if (error.code === '42501') {
       throw new Error('Permission denied. Please verify your account role.');
     }
-    throw new Error(`Failed to load Playbooks: ${error.message}`);
+    throw new Error(`Failed to load ${table}: ${error.message}`);
   }
 
-  return (data || []).map(mapPlaybookRowToPlaybook);
+  const list = (data || []) as Array<{ playbook_id: string; deleted_at: string | null }>;
+  return playbookId ? list.filter(r => r.playbook_id === playbookId) : list;
+}
+
+export async function fetchActivePlaybookCounts(
+  client: SupabaseClient = defaultSupabase,
+  playbookId?: string
+): Promise<Record<string, Required<PlaybookCounts>>> {
+  const [issues, guides, sops] = await Promise.all([
+    fetchActiveChildRows(client, 'issues', playbookId),
+    fetchActiveChildRows(client, 'guides', playbookId),
+    fetchActiveChildRows(client, 'sops', playbookId),
+  ]);
+
+  return aggregatePlaybookCounts(issues, guides, sops);
+}
+
+export async function listPlaybooks(
+  client: SupabaseClient = defaultSupabase
+): Promise<Playbook[]> {
+  const pbQuery = client
+    .from('playbooks')
+    .select('id, slug, name, code, description, icon, owner, visibility, created_at, updated_at, deleted_at, deleted_by')
+    .is('deleted_at', null)
+    .order('name', { ascending: true });
+
+  const [pbRes, countMap] = await Promise.all([
+    pbQuery,
+    fetchActivePlaybookCounts(client),
+  ]);
+
+  if (pbRes.error) {
+    if (pbRes.error.code === '42501') {
+      throw new Error('Permission denied. Please verify your account role.');
+    }
+    throw new Error(`Failed to load Playbooks: ${pbRes.error.message}`);
+  }
+
+  return (pbRes.data || []).map(row =>
+    mapPlaybookRowToPlaybook(row, countMap[row.id])
+  );
 }
 
 export async function getPlaybookBySlug(
@@ -92,7 +205,8 @@ export async function getPlaybookBySlug(
     return null;
   }
 
-  return mapPlaybookRowToPlaybook(data);
+  const countMap = await fetchActivePlaybookCounts(client, data.id);
+  return mapPlaybookRowToPlaybook(data, countMap[data.id]);
 }
 
 export async function createPlaybook(

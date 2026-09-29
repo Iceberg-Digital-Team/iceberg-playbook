@@ -26,6 +26,33 @@ export function parseHash(hash: string): RouteState {
   const sopEditMatch = path.match(/^\/sops\/([^/]+)\/edit$/);
   if (sopEditMatch) return { path: '/sops/[id]/edit', params: { id: decodeURIComponent(sopEditMatch[1]) } };
 
+  const issueEditMatch = path.match(/^\/issues\/([^/]+)\/edit$/);
+  if (issueEditMatch) return { path: '/issues/[id]/edit', params: { id: decodeURIComponent(issueEditMatch[1]) } };
+
+  const playbookIssueEditMatch = path.match(/^\/playbooks\/([^/]+)\/issues\/([^/]+)\/edit$/);
+  if (playbookIssueEditMatch) {
+    return {
+      path: '/issues/[id]/edit',
+      params: { slug: playbookIssueEditMatch[1], id: decodeURIComponent(playbookIssueEditMatch[2]) }
+    };
+  }
+
+  const playbookGuideEditMatch = path.match(/^\/playbooks\/([^/]+)\/guides\/([^/]+)\/edit$/);
+  if (playbookGuideEditMatch) {
+    return {
+      path: '/guides/[id]/edit',
+      params: { slug: playbookGuideEditMatch[1], id: decodeURIComponent(playbookGuideEditMatch[2]) }
+    };
+  }
+
+  const playbookSopEditMatch = path.match(/^\/playbooks\/([^/]+)\/sops\/([^/]+)\/edit$/);
+  if (playbookSopEditMatch) {
+    return {
+      path: '/sops/[id]/edit',
+      params: { slug: playbookSopEditMatch[1], id: decodeURIComponent(playbookSopEditMatch[2]) }
+    };
+  }
+
   // 1. Matches: /playbooks/[slug]/issues/[id]
   const issueMatch = path.match(/^\/playbooks\/([^/]+)\/issues\/([^/]+)$/);
   if (issueMatch) {

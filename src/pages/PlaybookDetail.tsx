@@ -110,7 +110,16 @@ export function PlaybookDetail() {
   const all = filter([...issues, ...guides, ...sops]);
   const list = filter(tab === 'Issues' ? issues : tab === 'Guides' ? guides : sops);
   const create = tab === 'Overview' ? '' : `/${tab === 'Issues' ? 'issue' : tab === 'Guides' ? 'guide' : 'sop'}`;
-  const rows = (items: ContentItem[]) => items.map(i => <ContentRow item={i} key={i.id} playbook={pb} />);
+  const issueMap = new Map(issues.map(i => [i.id, i]));
+  const rows = (items: ContentItem[]) =>
+    items.map(i => (
+      <ContentRow
+        item={i}
+        key={i.id}
+        playbook={pb}
+        linkedIssue={'issueId' in i && i.issueId ? issueMap.get(i.issueId) : undefined}
+      />
+    ));
 
   return (
     <div className="page">

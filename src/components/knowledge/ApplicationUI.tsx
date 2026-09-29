@@ -1,6 +1,7 @@
 import { Search, ArrowRight } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { formatGuideDate, formatGuideVersion, type Issue, type VersionedGuide, type SOP, type Playbook } from '../../data';
+import { Fragment, type ReactNode } from 'react';
+import type { Issue, VersionedGuide, SOP, Playbook } from '../../data';
+import { getRowJiraCode } from '../../search/searchCore';
 
 export function PageHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return <header className="page-heading"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{action}</header>;
@@ -22,56 +23,118 @@ function isPlaybook(item: SearchRowItem): item is Playbook {
   return 'slug' in item && 'name' in item;
 }
 
-export function ContentRow({ item, excerpt = false, playbook }: { item: SearchRowItem; excerpt?: boolean; playbook?: Playbook }) {
+export function ContentRow({
+  item,
+  excerpt: _excerpt = false,
+  playbook,
+  linkedIssue,
+  jiraCode: directJiraCode,
+}: {
+  item: SearchRowItem;
+  excerpt?: boolean;
+  playbook?: Playbook;
+  linkedIssue?: Issue;
+  jiraCode?: string;
+}) {
   if (isPlaybook(item)) {
+    const metaItems: ReactNode[] = [
+      <span key="visibility">{item.visibility || 'Internal'}</span>,
+      item.owner ? <span key="owner">{item.owner}</span> : null,
+    ].filter(Boolean);
+
+    const description = item.description?.trim();
+
     return (
       <a className="content-row" href={`#/playbooks/${item.slug}`}>
-        <span className="row-code">{item.code}</span>
         <div className="row-content">
-          <div className="row-title">{item.name}</div>
-          <div className="row-meta">
-            <span>Playbook</span>
-            <span>{item.visibility || 'Internal'}</span>
-            <span>{item.owner}</span>
-            {item.updatedAt && <span>Updated {formatGuideDate(item.updatedAt)}</span>}
+          <div className="row-header">
+            <span className="type-badge type-badge-playbook">PLAYBOOK</span>
+            {item.code && <span className="row-code">{item.code}</span>}
           </div>
-          {excerpt && <p className="row-excerpt">{item.description}</p>}
+          <div className="row-title">{item.name}</div>
+          {description && <p className="row-desc">{description}</p>}
+          {metaItems.length > 0 && (
+            <div className="row-meta">
+              {metaItems.map((meta, idx) => (
+                <Fragment key={idx}>
+                  {idx > 0 && <span className="meta-sep" aria-hidden="true">·</span>}
+                  {meta}
+                </Fragment>
+              ))}
+            </div>
+          )}
         </div>
-        <ArrowRight size={17} aria-hidden="true" />
+        <ArrowRight size={18} aria-hidden="true" />
       </a>
     );
   }
 
   const pb = playbook;
-  const type = 'issueId' in item ? 'Guide' : 'owner' in item ? 'SOP' : 'Issue';
-  const folder = type === 'Guide' ? 'guides' : type === 'SOP' ? 'sops' : 'issues';
+  const isGuide = 'issueId' in item;
+  const isSop = 'owner' in item && !('symptoms' in item);
+  const type = isGuide ? 'Guide' : isSop ? 'SOP' : 'Issue';
+  const folder = isGuide ? 'guides' : isSop ? 'sops' : 'issues';
+  const jiraCode = directJiraCode?.trim() || getRowJiraCode(item, linkedIssue);
   if (!pb) return null;
+
+  let description: string | undefined;
+  if (isGuide) {
+    description = item.issueId ? `Solves ${item.issueId}` : item.summary?.trim();
+  } else if (isSop) {
+    description = item.purpose?.trim();
+  } else {
+    description = (item as Issue).summary?.trim();
+  }
+
+  const metaItems: ReactNode[] = [];
+  if (pb.name) {
+    metaItems.push(<span key="pb">{pb.name}</span>);
+  }
+
+  if (isGuide || type === 'Issue') {
+    // Both Issue and Guide: Playbook Name · Status · Difficulty · JIRA CODE
+    if (item.status) {
+      metaItems.push(<span key="status">{item.status}</span>);
+    }
+    if ('difficulty' in item && item.difficulty) {
+      metaItems.push(<span key="diff">{item.difficulty}</span>);
+    }
+    if (jiraCode) {
+      metaItems.push(<span key="jira" className="jira-badge">JIRA {jiraCode}</span>);
+    }
+  } else if (isSop) {
+    // SOP: Playbook Name · Status · Estimated Time (no Jira, no owner, no updated date)
+    if (item.status) {
+      metaItems.push(<span key="status">{item.status}</span>);
+    }
+    if (item.estimatedTime) {
+      metaItems.push(<span key="time">{item.estimatedTime}</span>);
+    }
+  }
+
+  const badgeClass = `type-badge type-badge-${type.toLowerCase()}`;
+
   return (
     <a className="content-row" href={`#/playbooks/${pb.slug}/${folder}/${encodeURIComponent(item.id)}`}>
-      <span className="row-code">{item.id}</span>
       <div className="row-content">
-        <div className="row-title">{item.title}</div>
-        <div className="row-meta">
-          <span>{type}</span>
-          <span>{pb.name}</span>
-          {'issueId' in item ? (
-            <>
-              <span>Solves {item.issueId}</span>
-              <span>v{formatGuideVersion(item.versionNumber)}</span>
-            </>
-          ) : type === 'Issue' && 'affectedArea' in item ? (
-            item.affectedArea ? <span>{item.affectedArea}</span> : null
-          ) : (
-            <span>{'owner' in item ? item.owner : ''}</span>
-          )}
-          {item.estimatedTime && <span>{item.estimatedTime}</span>}
-          <span>{item.status}</span>
-          {'difficulty' in item && <span>{item.difficulty}</span>}
-          <span>Updated {formatGuideDate(item.updatedAt)}</span>
+        <div className="row-header">
+          <span className={badgeClass}>{type.toUpperCase()}</span>
+          <span className="row-code">{item.id}</span>
         </div>
-        {excerpt && <p className="row-excerpt">{'summary' in item ? item.summary : item.purpose}</p>}
+        <div className="row-title">{item.title}</div>
+        {description && <p className="row-desc">{description}</p>}
+        {metaItems.length > 0 && (
+          <div className="row-meta">
+            {metaItems.map((meta, idx) => (
+              <Fragment key={idx}>
+                {idx > 0 && <span className="meta-sep" aria-hidden="true">·</span>}
+                {meta}
+              </Fragment>
+            ))}
+          </div>
+        )}
       </div>
-      <ArrowRight size={17} aria-hidden="true" />
+      <ArrowRight size={18} aria-hidden="true" />
     </a>
   );
 }

@@ -18,6 +18,7 @@ export interface DatabaseIssueRow {
   difficulty: 'Easy' | 'Medium' | 'Advanced';
   estimated_time: string | null;
   author: string;
+  jira_code?: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
   created_at: string;
@@ -28,6 +29,25 @@ export interface CreateIssueInput {
   playbookId: string;
   title: string;
   summary: string;
+  jiraCode?: string;
+  status?: 'Verified' | 'Draft';
+  difficulty?: 'Easy' | 'Medium' | 'Advanced';
+  estimatedTime?: string;
+  symptoms?: string[];
+  errorMessage?: string;
+  context?: string;
+  affectedArea?: string;
+  informationToCollect?: string[];
+  attachments?: Attachment[];
+  internalNotes?: string;
+  author?: string;
+}
+
+export interface UpdateIssueInput {
+  id: string;
+  title: string;
+  summary: string;
+  jiraCode?: string | null;
   status?: 'Verified' | 'Draft';
   difficulty?: 'Easy' | 'Medium' | 'Advanced';
   estimatedTime?: string;
@@ -47,6 +67,7 @@ export function mapIssueRowToIssue(row: DatabaseIssueRow): Issue {
     playbookId: row.playbook_id,
     title: row.title,
     summary: row.summary,
+    jiraCode: row.jira_code?.trim() || undefined,
     symptoms: Array.isArray(row.symptoms) ? row.symptoms : [],
     errorMessage: row.error_message || '',
     context: row.context || '',
@@ -70,7 +91,7 @@ export async function listIssues(
 ): Promise<Issue[]> {
   const { data, error } = await client
     .from('issues')
-    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, deleted_at, deleted_by, created_at, updated_at')
+    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, jira_code, deleted_at, deleted_by, created_at, updated_at')
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
@@ -95,7 +116,7 @@ export async function listIssuesByPlaybook(
 
   const { data, error } = await client
     .from('issues')
-    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, deleted_at, deleted_by, created_at, updated_at')
+    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, jira_code, deleted_at, deleted_by, created_at, updated_at')
     .eq('playbook_id', cleanId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -121,7 +142,7 @@ export async function getIssueById(
 
   const { data, error } = await client
     .from('issues')
-    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, deleted_at, deleted_by, created_at, updated_at')
+    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, jira_code, deleted_at, deleted_by, created_at, updated_at')
     .eq('id', cleanId)
     .is('deleted_at', null)
     .maybeSingle();
@@ -147,6 +168,7 @@ export async function createIssue(
   const trimmedPlaybookId = input.playbookId?.trim() || '';
   const trimmedTitle = input.title?.trim() || '';
   const trimmedSummary = input.summary?.trim() || '';
+  const trimmedJiraCode = input.jiraCode?.trim() || null;
 
   if (!trimmedPlaybookId) {
     throw new Error('Select a Playbook for this Issue.');
@@ -176,6 +198,7 @@ export async function createIssue(
       playbook_id: trimmedPlaybookId,
       title: trimmedTitle,
       summary: trimmedSummary,
+      jira_code: trimmedJiraCode,
       status: input.status || 'Draft',
       difficulty: input.difficulty || 'Medium',
       estimated_time: input.estimatedTime?.trim() || '',
@@ -188,7 +211,7 @@ export async function createIssue(
       internal_notes: input.internalNotes?.trim() || '',
       author: input.author?.trim() || 'Support Team',
     })
-    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, deleted_at, deleted_by, created_at, updated_at')
+    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, jira_code, deleted_at, deleted_by, created_at, updated_at')
     .single();
 
   if (error) {
@@ -196,6 +219,69 @@ export async function createIssue(
       throw new Error('Permission denied. Support or Admin role required.');
     }
     throw new Error(`Failed to create Issue: ${error.message}`);
+  }
+
+  return mapIssueRowToIssue(data);
+}
+
+export async function updateIssue(
+  input: UpdateIssueInput,
+  client: SupabaseClient = defaultSupabase
+): Promise<Issue> {
+  const cleanId = input.id?.trim() || '';
+  const trimmedTitle = input.title?.trim() || '';
+  const trimmedSummary = input.summary?.trim() || '';
+
+  if (!cleanId) {
+    throw new Error('Enter an Issue ID.');
+  }
+  if (!trimmedTitle) {
+    throw new Error('Enter an Issue title.');
+  }
+  if (!trimmedSummary) {
+    throw new Error('Provide a problem summary.');
+  }
+
+  const trimmedJiraCode = input.jiraCode?.trim() || null;
+
+  const updatePayload: Record<string, unknown> = {
+    title: trimmedTitle,
+    summary: trimmedSummary,
+    jira_code: trimmedJiraCode,
+    status: input.status || 'Draft',
+    difficulty: input.difficulty || 'Medium',
+    estimated_time: input.estimatedTime?.trim() || '',
+    symptoms: (input.symptoms || []).map(s => s.trim()).filter(Boolean),
+    error_message: input.errorMessage?.trim() || '',
+    context: input.context?.trim() || '',
+    affected_area: input.affectedArea?.trim() || '',
+    information_to_collect: (input.informationToCollect || []).map(s => s.trim()).filter(Boolean),
+    attachments: (input.attachments || []).filter(a => a.url?.trim()),
+    internal_notes: input.internalNotes?.trim() || '',
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.author?.trim()) {
+    updatePayload.author = input.author.trim();
+  }
+
+  const { data, error } = await client
+    .from('issues')
+    .update(updatePayload)
+    .eq('id', cleanId)
+    .is('deleted_at', null)
+    .select('id, playbook_id, title, summary, symptoms, error_message, context, affected_area, information_to_collect, attachments, internal_notes, status, difficulty, estimated_time, author, jira_code, deleted_at, deleted_by, created_at, updated_at')
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === '42501' || error.message?.includes('Permission denied')) {
+      throw new Error('Permission denied. Support or Admin role required.');
+    }
+    throw new Error(`Failed to update Issue: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error('Issue not found or has been deleted.');
   }
 
   return mapIssueRowToIssue(data);

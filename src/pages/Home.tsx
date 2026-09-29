@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ArrowRight, MessageSquare, Briefcase, Home as HomeIcon, Video, Mic, Globe, type LucideIcon } from 'lucide-react';
+import { Search, ArrowRight, MessageSquare, Briefcase, Home as HomeIcon, Video, Mic, Globe, AlertCircle, BookOpen, ClipboardList, type LucideIcon } from 'lucide-react';
 import { useRouter } from '../router';
 import { listPlaybooks } from '../services/playbookService';
 import type { Playbook } from '../data';
@@ -104,6 +104,48 @@ export const Home: React.FC<HomeProps> = ({ onSearchTrigger }) => {
         ) : (
           <p className="home-empty">Your team’s playbooks will appear here. <a href="#/create/playbook">Create a playbook</a></p>
         )}
+      </section>
+      <section className="home-quick-access" aria-labelledby="home-quick-access-title">
+        <div className="home-section-heading">
+          <div>
+            <h2 id="home-quick-access-title">Quick access</h2>
+            <p className="home-section-subtitle">Jump to the information you need.</p>
+          </div>
+        </div>
+        <div className="home-quick-cards">
+          <a className="home-quick-card home-quick-card-issues" href="#/search?type=Issues">
+            <span className="home-quick-card-icon">
+              <AlertCircle size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="home-quick-card-title">Issues</span>
+            <span className="home-quick-card-desc">Track reported problems.</span>
+            <span className="home-quick-card-action">
+              Open <ArrowRight size={14} aria-hidden="true" />
+            </span>
+          </a>
+
+          <a className="home-quick-card home-quick-card-guides" href="#/search?type=Guides">
+            <span className="home-quick-card-icon">
+              <BookOpen size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="home-quick-card-title">Guides</span>
+            <span className="home-quick-card-desc">Open solution guides.</span>
+            <span className="home-quick-card-action">
+              Open <ArrowRight size={14} aria-hidden="true" />
+            </span>
+          </a>
+
+          <a className="home-quick-card home-quick-card-sops" href="#/search?type=SOPs">
+            <span className="home-quick-card-icon">
+              <ClipboardList size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="home-quick-card-title">SOPs</span>
+            <span className="home-quick-card-desc">View standard procedures.</span>
+            <span className="home-quick-card-action">
+              Open <ArrowRight size={14} aria-hidden="true" />
+            </span>
+          </a>
+        </div>
       </section>
       <section className="home-recent" aria-labelledby="home-recent-title">
         <div className="home-section-heading"><h2 id="home-recent-title">Recent solutions</h2></div>

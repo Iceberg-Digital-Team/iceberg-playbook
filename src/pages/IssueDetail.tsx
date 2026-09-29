@@ -184,8 +184,9 @@ export function IssueDetail() {
         </a>
         <div className="inline-actions">
           <button
+            type="button"
             className="btn-secondary"
-            onClick={() => setMessage('Issue editing is not available in this preview yet.')}
+            onClick={() => navigate(`/issues/${encodeURIComponent(issue.id)}/edit`)}
           >
             <Edit size={14} />Edit
           </button>
@@ -219,7 +220,11 @@ export function IssueDetail() {
         updatedAt={formatGuideDate(issue.updatedAt)}
         authorOrOwner={issue.author}
         type="Issue"
+        jiraCode={issue.jiraCode}
       />
+      {issue.jiraCode && (
+        <SummarySection text={issue.jiraCode} title="Jira Code" />
+      )}
       <SummarySection text={issue.summary} title="Problem Summary" />
       <section className="article-section">
         <h2>Symptoms</h2>

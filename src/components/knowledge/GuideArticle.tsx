@@ -100,6 +100,7 @@ export function GuideArticle({
         type="Guide"
         versionLabel={versionLabel}
         connection={<a href={`#/playbooks/${pb.slug}/issues/${iss.id}`}>{iss.id} — {iss.title}</a>}
+        jiraCode={iss.jiraCode}
       />
       <SummarySection text={guide.summary} />
       <ChecklistSection items={guideChecklist(guide)} />

@@ -8,6 +8,9 @@ export interface Playbook {
   issueCount: number;
   guideCount: number;
   sopCount: number;
+  activeIssuesCount?: number;
+  activeGuidesCount?: number;
+  activeSopsCount?: number;
   updatedAt: string;
   owner?: string;
   visibility?: 'Internal' | 'Public';
@@ -65,6 +68,7 @@ export interface Issue {
   difficulty: 'Easy' | 'Medium' | 'Advanced';
   estimatedTime: string;
   author: string;
+  jiraCode?: string;
   createdAt: string;
   updatedAt: string;
 }
