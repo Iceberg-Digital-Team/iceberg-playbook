@@ -7,21 +7,12 @@ import { importTs } from './helpers/transpile.mjs';
 process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://dummy.supabase.co';
 process.env.VITE_SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'dummy-anon-key-for-unit-tests';
 
-// Search runs against isolated in-memory storage, never the user's records.
-const storage = new Map();
-globalThis.localStorage = {
-    getItem: key => storage.get(key) ?? null,
-    setItem: (key, value) => { storage.set(key, value); },
-};
-
 async function loadTs(relativePath) {
     const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
     const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2023 } }).outputText;
     return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 }
-const data = await importTs('src/data.ts', 'search');
-// Tests on real content start from empty storage and load the sample data explicitly.
-const loadSample = () => { storage.clear(); data.loadSampleData(); };
+const samples = await importTs('src/sampleData.ts', 'search-samples');
 const core = await loadTs('../src/search/searchCore.ts');
 
 const playbooks = [{ id: 'pb-a', name: 'Alphaplatform' }, { id: 'pb-b', name: 'Betaplatform' }];
@@ -30,7 +21,12 @@ const guide = o => ({ playbookId: 'pb-a', issueId: '', title: '', summary: '', s
 const sop = o => ({ playbookId: 'pb-a', title: '', purpose: '', owner: 'Ops', ...o });
 const ids = (query, set, options = {}) =>
     core.searchKnowledge(query, { issues: [], guides: [], sops: [], playbooks, ...set }, options).map(x => x.id);
-const realData = () => ({ issues: data.getIssues(), guides: data.getGuides(), sops: data.getSOPs(), playbooks: data.getPlaybooks() });
+const realData = () => ({
+    issues: samples.sampleIssues,
+    guides: samples.sampleGuides,
+    sops: samples.sampleSOPs,
+    playbooks: samples.samplePlaybooks
+});
 
 const issueInput = { playbookId: 'whatsapp', title: 'QA problem', summary: 'Customer cannot complete signup.', status: 'Draft', difficulty: 'Medium', estimatedTime: '10 min', symptoms: ['Blank screen'], errorMessage: 'E-QA', context: 'During signup', affectedArea: 'Signup', informationToCollect: ['WABA ID'], attachments: [], internalNotes: 'Investigate' };
 
@@ -58,9 +54,8 @@ test('exact Guide and SOP codes rank first above records that mention them', () 
     assert.deepEqual(ids('SOP-001', set), ['SOP-001', 'SOP-002']);
     assert.deepEqual(ids('sop-001?', set), ['SOP-001', 'SOP-002']);
 
-    loadSample();
     assert.equal(core.searchKnowledge('WA-G02', realData(), {})[0].id, 'WA-G02');
-    const sopId = data.getSOPs()[0].id;
+    const sopId = samples.sampleSOPs[0].id;
     assert.equal(core.searchKnowledge(sopId, realData(), {})[0].id, sopId);
 });
 
@@ -135,23 +130,22 @@ test('errorMessage match ranks above summary match', () => {
 });
 
 test('real data: Issue is found by a term that exists only in its symptoms or errorMessage', () => {
-    loadSample();
-    const created = data.addIssue({ ...issueInput, symptoms: ['Quxlantic spinner freeze'], errorMessage: 'ERR_ZORBLAX_42' });
-    const found = q => core.searchKnowledge(q, realData(), {}).map(x => x.id);
+    const created = { ...issueInput, id: 'WA-TEST-01', symptoms: ['Quxlantic spinner freeze'], errorMessage: 'ERR_ZORBLAX_42' };
+    const dataset = { ...realData(), issues: [...realData().issues, created] };
+    const found = q => core.searchKnowledge(q, dataset, {}).map(x => x.id);
     assert.deepEqual(found('quxlantic'), [created.id]);
     assert.deepEqual(found('ERR_ZORBLAX_42'), [created.id]);
     assert.deepEqual(found('err_zorblax_42'), [created.id]);
 });
 
 test('real data (R-02): Issue code returns the Issue first and its Guide too', () => {
-    loadSample();
-    const guideId = data.getPrimaryGuide('WA-001').id;
+    const guideId = samples.sampleGuides.find(g => g.issueId === 'WA-001').id;
     for (const q of ['WA-001', 'wa-001']) {
         const found = core.searchKnowledge(q, realData(), {}).map(x => x.id);
         assert.equal(found[0], 'WA-001');
         assert.ok(found.includes(guideId), `Guide ${guideId} missing for ${q}`);
     }
-    const linkedTitle = data.getIssues().find(i => i.id === 'WA-001').title;
+    const linkedTitle = samples.sampleIssues.find(i => i.id === 'WA-001').title;
     assert.ok(core.searchKnowledge(linkedTitle, realData(), {}).some(x => x.id === guideId));
 });
 
@@ -204,7 +198,6 @@ test('no match returns empty; orphan records never appear even when their text m
 });
 
 test('real data (R-07): Guide results are unique and come only from current getGuides() records', () => {
-    loadSample();
     const d = realData();
     const results = core.searchKnowledge('', d, { type: 'Guides' });
     const resultIds = results.map(x => x.id);
@@ -237,7 +230,6 @@ test('sidebar navigation does not contain troubleshooting entry or dead links', 
 });
 
 test('Search domains strictly remain Playbook, Issue, Guide, and SOP only', () => {
-    loadSample();
     const d = realData();
     const results = core.searchKnowledge('', d);
     const validDomains = new Set(['Playbook', 'Issue', 'Guide', 'SOP']);

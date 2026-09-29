@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Guide, Playbook, Issue, Step } from '../../data';
-import { getIssues, getPlaybooks, formatGuideDate } from '../../data';
+import { formatGuideDate } from '../../data';
 import { guideChecklist } from '../../guideTemplate';
 import { getSignedMediaUrl, getSignedMediaUrls, isStorageKey } from '../../services/mediaService';
 import { ArticleHeader, SummarySection, ChecklistSection, ImportantInfoSection, StepsSection, CommonProblemsAccordion, InternalNotes, VideoSection, PDFSection } from '../article/ArticleComponents';
@@ -17,8 +17,8 @@ export function GuideArticle({
   playbook?: Playbook | null;
   issue?: Issue | null;
 }) {
-  const pb = playbook ?? getPlaybooks().find(p => p.id === guide.playbookId);
-  const iss = issue ?? getIssues().find(i => i.id === guide.issueId);
+  const pb = playbook ?? null;
+  const iss = issue ?? null;
 
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | undefined>(guide.video);
   const [resolvedPdfUrl, setResolvedPdfUrl] = useState<string | undefined>(guide.pdf);

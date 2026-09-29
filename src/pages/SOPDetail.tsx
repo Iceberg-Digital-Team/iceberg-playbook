@@ -302,7 +302,7 @@ export function SOPDetail() {
         <section>
           <h2>Related Resources</h2>
           {related.map(item => (
-            <ContentRow key={item.id} item={item} />
+            <ContentRow key={item.id} item={item} playbook={item.playbookId === pb?.id ? pb : undefined} />
           ))}
         </section>
       )}

@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import type { Playbook } from '../data';
 import { listPlaybooks, softDeletePlaybook } from '../services/playbookService';
-import { hasAnyContent, loadSampleData, formatStorageError } from '../data';
 import { PageHeader, FormSection } from '../components/knowledge/ApplicationUI';
 
 function DeleteDialog({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => void }) {
@@ -36,37 +35,6 @@ function DeleteDialog({ name, onCancel, onConfirm }: { name: string; onCancel: (
   );
 }
 
-function SampleDataDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const el = ref.current!;
-    el.showModal();
-    return () => el.close();
-  }, []);
-  return (
-    <dialog
-      className="guide-restore-dialog"
-      ref={ref}
-      aria-labelledby="sample-title"
-      onCancel={e => {
-        e.preventDefault();
-        onCancel();
-      }}
-    >
-      <h2 id="sample-title">Load sample data?</h2>
-      <p>Example Playbooks, Issues, Guides and SOPs will be added to this empty workspace.</p>
-      <div className="knowledge-actions">
-        <button autoFocus className="btn-secondary" onClick={onCancel}>
-          Cancel
-        </button>
-        <button className="btn-primary" onClick={onConfirm}>
-          Load sample data
-        </button>
-      </div>
-    </dialog>
-  );
-}
-
 export function Settings() {
   const { session, signOut } = useAuth();
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
@@ -75,9 +43,6 @@ export function Settings() {
   const [itemsPerPage, setItemsPerPage] = useState('10');
   const [pending, setPending] = useState<string>();
   const [message, setMessage] = useState('');
-  const [hasContent, setHasContent] = useState(hasAnyContent);
-  const [confirmSample, setConfirmSample] = useState(false);
-  const [sampleError, setSampleError] = useState('');
 
   const refreshPlaybooks = () => {
     setLoadingPlaybooks(true);
@@ -121,18 +86,6 @@ export function Settings() {
       active = false;
     };
   }, []);
-
-  const loadSamples = () => {
-    setConfirmSample(false);
-    setSampleError('');
-    try {
-      loadSampleData();
-      setHasContent(true);
-      setMessage('Sample data loaded into local preview.');
-    } catch (e) {
-      setSampleError(formatStorageError(e, 'Could not load sample data.'));
-    }
-  };
 
   const deletion = async () => {
     if (!pending) return;
@@ -213,29 +166,6 @@ export function Settings() {
         </div>
         <p className="helper-text">Preference controls are a preview and do not yet change content lists.</p>
       </FormSection>
-      <FormSection title="Sample Data">
-        <div className="settings-row">
-          <div>
-            <h3>Example content</h3>
-            <p className="helper-text">
-              {hasContent
-                ? 'Sample data can only be loaded into an empty workspace. Your existing Playbooks, Issues, Guides and SOPs are never overwritten.'
-                : 'Add example Playbooks, Issues, Guides and SOPs to explore the workspace.'}
-            </p>
-          </div>
-          <button
-            className="btn-secondary"
-            disabled={hasContent}
-            onClick={() => {
-              setSampleError('');
-              setConfirmSample(true);
-            }}
-          >
-            Load sample data
-          </button>
-        </div>
-        {sampleError && <p className="knowledge-error" role="alert">{sampleError}</p>}
-      </FormSection>
       <FormSection title="Integrations">
         <div className="settings-row">
           <div>
@@ -263,9 +193,6 @@ export function Settings() {
           onCancel={() => setPending(undefined)}
           onConfirm={deletion}
         />
-      )}
-      {confirmSample && (
-        <SampleDataDialog onCancel={() => setConfirmSample(false)} onConfirm={loadSamples} />
       )}
     </div>
   );

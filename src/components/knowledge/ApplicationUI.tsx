@@ -1,6 +1,6 @@
 import { Search, ArrowRight } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { getPlaybooks, getSolutionState, formatGuideDate, formatGuideVersion, type Issue, type VersionedGuide, type SOP, type Playbook } from '../../data';
+import { formatGuideDate, formatGuideVersion, type Issue, type VersionedGuide, type SOP, type Playbook } from '../../data';
 
 export function PageHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return <header className="page-heading"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{action}</header>;
@@ -42,7 +42,7 @@ export function ContentRow({ item, excerpt = false, playbook }: { item: SearchRo
     );
   }
 
-  const pb = playbook || getPlaybooks().find(p => p.id === item.playbookId);
+  const pb = playbook;
   const type = 'issueId' in item ? 'Guide' : 'owner' in item ? 'SOP' : 'Issue';
   const folder = type === 'Guide' ? 'guides' : type === 'SOP' ? 'sops' : 'issues';
   if (!pb) return null;
@@ -59,8 +59,8 @@ export function ContentRow({ item, excerpt = false, playbook }: { item: SearchRo
               <span>Solves {item.issueId}</span>
               <span>v{formatGuideVersion(item.versionNumber)}</span>
             </>
-          ) : type === 'Issue' ? (
-            <span>{getSolutionState(item.id)}</span>
+          ) : type === 'Issue' && 'affectedArea' in item ? (
+            item.affectedArea ? <span>{item.affectedArea}</span> : null
           ) : (
             <span>{'owner' in item ? item.owner : ''}</span>
           )}

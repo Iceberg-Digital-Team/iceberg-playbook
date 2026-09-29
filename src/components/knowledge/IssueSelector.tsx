@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { getIssues, getPlaybooks, getPrimaryGuide, type Issue, type Playbook } from '../../data';
+import type { Issue, Playbook } from '../../data';
 import './Knowledge.css';
 
 export function IssueSelector({
   value,
   onChange,
-  issues: propIssues,
-  playbooks: propPlaybooks,
-  hasGuide: propHasGuide
+  issues = [],
+  playbooks = [],
+  hasGuide = () => false
 }: {
   value: string;
   onChange: (id: string) => void;
@@ -17,9 +17,7 @@ export function IssueSelector({
 }) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(!value);
-  const issues = propIssues ?? getIssues();
-  const playbooks = propPlaybooks ?? getPlaybooks();
-  const checkHasGuide = propHasGuide ?? ((id: string) => Boolean(getPrimaryGuide(id)));
+  const checkHasGuide = hasGuide;
   const selected = issues.find(i => i.id === value);
   const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const matches = issues.filter(i => tokens.every(t => `${i.id} ${i.title} ${i.summary} ${i.symptoms.join(' ')} ${i.errorMessage} ${i.affectedArea} ${playbooks.find(p => p.id === i.playbookId)?.name}`.toLowerCase().includes(t)));
