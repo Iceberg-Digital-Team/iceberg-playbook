@@ -224,14 +224,3 @@ a:hover {
 .btn-secondary:hover {
   background-color: var(--border);
 }
-
-/* Badges */
-.badge-code {
-  background-color: rgba(230, 0, 126, 0.05);
-  color: var(--iceberg-magenta);
-  font-family: monospace;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-}

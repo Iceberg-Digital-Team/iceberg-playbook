@@ -14,7 +14,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .btn-secondary { background: transparent; }
 .btn-secondary:hover { background: var(--light-background); }
 .btn-primary svg, .btn-secondary svg { flex-shrink: 0; }
-.badge-code { background: none; padding: 0; font-size: 13px; font-weight: 500; }
 .page { display: flex; flex-direction: column; gap: 32px; width: 100%; }
 .reading-page, .knowledge-detail, .guide-article { max-width: 840px; margin: 0 auto; }
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
@@ -170,12 +169,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
   letter-spacing: 0.02em;
 }
 
-.row-excerpt {
-  font-size: 14px;
-  margin-top: 4px;
-  max-width: 650px;
-  color: var(--secondary-text);
-}
 .state-message { padding:32px 0; display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
 .state-message h2 { font-size:19px; margin:0; }
 .state-message p { max-width:620px; }
