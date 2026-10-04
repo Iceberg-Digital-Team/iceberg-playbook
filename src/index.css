@@ -82,14 +82,6 @@ h1 {
   color: var(--primary-text);
 }
 
-.hero-title {
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
-  margin: 0 0 16px 0;
-}
-
 h2 {
   font-size: 22px;
   font-weight: 700;
