@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export interface RouteState {
   path: string;
@@ -110,25 +110,121 @@ export function parseHash(hash: string): RouteState {
   return { path: '/', params: {} };
 }
 
+export type NavigationBlocker = (targetHash: string, proceed: () => void) => boolean;
+
+let activeBlocker: NavigationBlocker | null = null;
+let isReverting = false;
+let bypassBlocker = false;
+let currentUrlHash = typeof window !== 'undefined' ? (window.location.hash || '#/') : '#/';
+
+export function setNavigationBlocker(blocker: NavigationBlocker | null) {
+  activeBlocker = blocker;
+}
+
+const listeners = new Set<(state: RouteState) => void>();
+
+function notifyListeners() {
+  currentUrlHash = typeof window !== 'undefined' ? (window.location.hash || '#/') : '#/';
+  const state = parseHash(typeof window !== 'undefined' ? window.location.hash : '');
+  for (const listener of listeners) {
+    listener(state);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('hashchange', (event: HashChangeEvent) => {
+    if (isReverting) {
+      isReverting = false;
+      return;
+    }
+
+    if (bypassBlocker) {
+      bypassBlocker = false;
+      notifyListeners();
+      return;
+    }
+
+    if (activeBlocker) {
+      const oldHash = currentUrlHash || (event.oldURL ? new URL(event.oldURL).hash : '') || '#/';
+      const newHash = window.location.hash || '#/';
+
+      if (oldHash && newHash !== oldHash) {
+        const targetHash = newHash;
+        const blocked = activeBlocker(targetHash, () => {
+          bypassBlocker = true;
+          window.location.hash = targetHash;
+        });
+
+        if (blocked) {
+          isReverting = true;
+          window.location.hash = oldHash;
+          return;
+        }
+      }
+    }
+
+    notifyListeners();
+  });
+
+  document.addEventListener(
+    'click',
+    (event: MouseEvent) => {
+      if (!activeBlocker) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+
+      const anchor = (event.target as HTMLElement)?.closest?.('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+
+      if (href.startsWith('#')) {
+        const current = window.location.hash || '#/';
+        const targetHash = href;
+        if (targetHash === current) return;
+
+        const blocked = activeBlocker(targetHash, () => {
+          bypassBlocker = true;
+          window.location.hash = targetHash;
+        });
+
+        if (blocked) {
+          event.preventDefault();
+        }
+      }
+    },
+    true
+  );
+}
+
 export function useRouter() {
-  const [routeState, setRouteState] = useState<RouteState>(() => parseHash(window.location.hash));
+  const [routeState, setRouteState] = useState<RouteState>(() =>
+    parseHash(typeof window !== 'undefined' ? window.location.hash : '')
+  );
 
   useEffect(() => {
-    const handleHashChange = () => {
-      setRouteState(parseHash(window.location.hash));
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
+    listeners.add(setRouteState);
     return () => {
-      window.removeEventListener('hashchange', handleHashChange);
+      listeners.delete(setRouteState);
     };
   }, []);
 
-  const navigate = (path: string) => {
-    // Standardize leading hash symbol
+  const navigate = useCallback((path: string) => {
     const targetHash = path.startsWith('#') ? path : `#${path}`;
-    window.location.hash = targetHash;
-  };
+    const currentHash = typeof window !== 'undefined' ? (window.location.hash || '#/') : '#/';
+    if (targetHash === currentHash) return;
+
+    if (activeBlocker) {
+      const blocked = activeBlocker(targetHash, () => {
+        bypassBlocker = true;
+        window.location.hash = targetHash;
+      });
+      if (blocked) return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.location.hash = targetHash;
+    }
+  }, []);
 
   return {
     path: routeState.path,

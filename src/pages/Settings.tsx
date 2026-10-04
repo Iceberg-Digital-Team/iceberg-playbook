@@ -166,15 +166,6 @@ export function Settings() {
         </div>
         <p className="helper-text">Preference controls are a preview and do not yet change content lists.</p>
       </FormSection>
-      <FormSection title="Integrations">
-        <div className="settings-row">
-          <div>
-            <h3>Jira Integration</h3>
-            <p className="helper-text">Connect support tickets to documented solutions.</p>
-          </div>
-          <span className="helper-text">Coming Soon</span>
-        </div>
-      </FormSection>
       <button
         className="back-link"
         onClick={async () => {

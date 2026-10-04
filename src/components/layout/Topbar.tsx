@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Search, Bell, Plus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Menu, Search, Bell } from 'lucide-react';
 import { useRouter } from '../../router';
 import './Topbar.css';
 
@@ -13,22 +13,6 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuToggle }) => {
   // No notification source exists yet - this stays false until a real
   // notification system is built. The dot must never show for zero notifications.
   const [hasUnreadNotifications] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   // Keyboard shortcut listener for Ctrl+K / Cmd+K
   useEffect(() => {
@@ -44,16 +28,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuToggle }) => {
     };
   }, [navigate]);
 
-  const handleDropdownItemClick = (type: string) => {
-    setIsDropdownOpen(false);
-    if (type === 'issue') navigate('/create/issue');
-    else if (type === 'guide') navigate('/create/guide');
-    else if (type === 'sop') navigate('/create/sop');
-    else if (type === 'playbook') navigate('/create/playbook');
-  };
-
   return (
-    <header className="topbar" onKeyDown={e=>{if(e.key==='Escape'){setIsDropdownOpen(false);setNotice(false);}}}>
+    <header className="topbar" onKeyDown={e=>{if(e.key==='Escape'){setNotice(false);}}}>
       {/* Mobile Toggle Button */}
       <button className="menu-toggle-btn" onClick={onMenuToggle} aria-label="Toggle Sidebar">
         <Menu size={18} />
@@ -75,34 +51,6 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuToggle }) => {
         </button>
 
         {notice && <div className="notification-popover" role="status">No new notifications.</div>}
-        {/* Create Button with Dropdown */}
-        <div className="create-btn-container" ref={dropdownRef}>
-          <button
-            className="create-btn"
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            aria-expanded={isDropdownOpen}
-          >
-            <Plus className="create-btn-icon" />
-            <span>Create</span>
-          </button>
-
-          {isDropdownOpen && (
-            <div className="create-dropdown">
-              <button className="dropdown-item" onClick={() => handleDropdownItemClick('issue')}>
-                New Issue
-              </button>
-              <button className="dropdown-item" onClick={() => handleDropdownItemClick('guide')}>
-                New Guide
-              </button>
-              <button className="dropdown-item" onClick={() => handleDropdownItemClick('sop')}>
-                New SOP
-              </button>
-              <button className="dropdown-item" onClick={() => handleDropdownItemClick('playbook')}>
-                New Playbook
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     </header>
   );

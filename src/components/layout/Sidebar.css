@@ -18,40 +18,17 @@
 .logo-wrapper {
   display: flex;
   align-items: center;
-  gap: 12px;
+  text-decoration: none;
 }
 
-.logo-mark {
-  background-color: var(--iceberg-magenta);
-  color: var(--primary-white);
-  font-weight: 800;
-  font-size: 20px;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
+.sidebar-logo {
+  height: 64px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  display: block;
 }
 
-.logo-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.logo-brand {
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 0.05em;
-  color: var(--primary-white);
-  line-height: 1.1;
-}
-
-.logo-subbrand {
-  font-size: 10px;
-  color: var(--muted-text);
-  letter-spacing: 0.1em;
-}
 
 .sidebar-nav {
   display: flex;

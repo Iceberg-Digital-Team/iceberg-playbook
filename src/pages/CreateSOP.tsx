@@ -6,6 +6,7 @@ import { listPlaybooks } from '../services/playbookService';
 import { createSop, getSopById, updateSop } from '../services/sopService';
 import { PageHeader, FormSection, StateMessage } from '../components/knowledge/ApplicationUI';
 import { StringList, StepEditor, revealInvalid } from '../components/knowledge/EditorFields';
+import { useUnsavedChangesWarning } from '../components/knowledge/useUnsavedChangesWarning';
 
 export function CreateSOP() {
   const { path, params } = useRouter();
@@ -99,6 +100,8 @@ function SOPEditor({ initial }: { initial?: SOP }) {
   const [notes, setNotes] = useState(initial?.internalNotes || '');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const defaultSopChecklist = ['Customer information received', 'Setup verified', 'Testing completed'];
+  const [defaultPlaybookId, setDefaultPlaybookId] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -107,7 +110,9 @@ function SOPEditor({ initial }: { initial?: SOP }) {
         if (!active) return;
         setPlaybooks(data);
         if (!initial) {
-          setPlaybookId(current => params.playbook || current || (data.length > 0 ? data[0].id : ''));
+          const chosen = params.playbook || (data.length > 0 ? data[0].id : '');
+          setPlaybookId(current => current || chosen);
+          setDefaultPlaybookId(current => current || chosen);
         }
       })
       .catch(err => {
@@ -119,6 +124,45 @@ function SOPEditor({ initial }: { initial?: SOP }) {
       active = false;
     };
   }, [params.playbook, initial]);
+
+  const isDirty = initial
+    ? Boolean(
+        title.trim() !== (initial.title || '').trim() ||
+          purpose.trim() !== (initial.purpose || '').trim() ||
+          when.trim() !== (initial.whenToUse || '').trim() ||
+          status !== (initial.status || 'Draft') ||
+          time.trim() !== (initial.estimatedTime || '30 min').trim() ||
+          team.trim() !== (initial.responsibleTeam || 'Support & Onboarding Team').trim() ||
+          escalation.trim() !== (initial.escalationRules || '').trim() ||
+          completion.trim() !== (initial.completionCriteria || '').trim() ||
+          notes.trim() !== (initial.internalNotes || '').trim() ||
+          playbookId !== initial.playbookId ||
+          JSON.stringify(requirements.filter(r => r.trim())) !==
+            JSON.stringify((initial.requirements || []).filter(r => r.trim())) ||
+          JSON.stringify(checklist.filter(c => c.trim())) !==
+            JSON.stringify((initial.checklist || []).filter(c => c.trim())) ||
+          JSON.stringify(steps.map(s => ({ title: s.title.trim(), description: s.description.trim() }))) !==
+            JSON.stringify(
+              (initial.steps || []).map(s => ({ title: s.title.trim(), description: s.description.trim() }))
+            )
+      )
+    : Boolean(
+        title.trim() !== '' ||
+          purpose.trim() !== '' ||
+          when.trim() !== '' ||
+          escalation.trim() !== '' ||
+          completion.trim() !== '' ||
+          notes.trim() !== '' ||
+          status !== 'Draft' ||
+          time !== '30 min' ||
+          team !== 'Support & Onboarding Team' ||
+          requirements.some(r => r.trim() !== '') ||
+          steps.some(s => s.title.trim() !== '' || s.description.trim() !== '') ||
+          JSON.stringify(checklist) !== JSON.stringify(defaultSopChecklist) ||
+          (defaultPlaybookId && playbookId !== defaultPlaybookId)
+      );
+
+  const { DiscardDialog, markClean } = useUnsavedChangesWarning(isDirty);
 
   const pb = playbooks.find(p => p.id === playbookId);
 
@@ -166,6 +210,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           owner: initial.owner || 'Support Team',
           revisionHistory: initial.revisionHistory || []
         });
+        markClean();
         navigate(`/playbooks/${pb.slug}/sops/${initial.id}`);
       } else {
         const sop = await createSop({
@@ -190,6 +235,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           internalNotes: notes.trim(),
           owner: 'Support Team'
         });
+        markClean();
         navigate(`/playbooks/${pb.slug}/sops/${sop.id}`);
       }
     } catch (err) {
@@ -364,6 +410,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           </button>
         </div>
       </form>
+      <DiscardDialog />
     </div>
   );
 }

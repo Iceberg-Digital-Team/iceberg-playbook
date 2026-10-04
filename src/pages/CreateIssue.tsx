@@ -6,6 +6,7 @@ import { listPlaybooks } from '../services/playbookService';
 import { createIssue, getIssueById, updateIssue } from '../services/issueService';
 import { PageHeader, FormSection, StateMessage } from '../components/knowledge/ApplicationUI';
 import { StringList, revealInvalid } from '../components/knowledge/EditorFields';
+import { useUnsavedChangesWarning } from '../components/knowledge/useUnsavedChangesWarning';
 
 export function CreateIssue() {
   const { path, params } = useRouter();
@@ -94,6 +95,8 @@ function IssueEditor({ initial }: { initial?: Issue }) {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [defaultPlaybookId, setDefaultPlaybookId] = useState('');
+
   useEffect(() => {
     let active = true;
     listPlaybooks()
@@ -102,9 +105,9 @@ function IssueEditor({ initial }: { initial?: Issue }) {
         setPlaybooks(items);
         setPlaybooksLoading(false);
         if (!isEdit && items.length > 0) {
-          setPlaybookId(current =>
-            current || (params.playbook && items.some(p => p.id === params.playbook) ? params.playbook : items[0].id)
-          );
+          const chosen = (params.playbook && items.some(p => p.id === params.playbook) ? params.playbook : items[0].id);
+          setPlaybookId(current => current || chosen);
+          setDefaultPlaybookId(current => current || chosen);
         }
       })
       .catch(err => {
@@ -117,6 +120,45 @@ function IssueEditor({ initial }: { initial?: Issue }) {
       active = false;
     };
   }, [isEdit, params.playbook]);
+
+  const isDirty = isEdit
+    ? Boolean(
+        initial &&
+          (title.trim() !== (initial.title || '').trim() ||
+            summary.trim() !== (initial.summary || '').trim() ||
+            jiraCode.trim() !== (initial.jiraCode || '').trim() ||
+            status !== (initial.status || 'Draft') ||
+            difficulty !== (initial.difficulty || 'Medium') ||
+            time.trim() !== (initial.estimatedTime || '').trim() ||
+            errorMessage.trim() !== (initial.errorMessage || '').trim() ||
+            context.trim() !== (initial.context || '').trim() ||
+            area.trim() !== (initial.affectedArea || '').trim() ||
+            notes.trim() !== (initial.internalNotes || '').trim() ||
+            playbookId !== initial.playbookId ||
+            JSON.stringify(symptoms.filter(s => s.trim())) !==
+              JSON.stringify((initial.symptoms || []).filter(s => s.trim())) ||
+            JSON.stringify(information.filter(s => s.trim())) !==
+              JSON.stringify((initial.informationToCollect || []).filter(s => s.trim())) ||
+            JSON.stringify(attachments) !== JSON.stringify(initial.attachments || []))
+      )
+    : Boolean(
+        title.trim() !== '' ||
+          summary.trim() !== '' ||
+          jiraCode.trim() !== '' ||
+          status !== 'Draft' ||
+          difficulty !== 'Medium' ||
+          time.trim() !== '' ||
+          errorMessage.trim() !== '' ||
+          context.trim() !== '' ||
+          area.trim() !== '' ||
+          notes.trim() !== '' ||
+          symptoms.some(s => s.trim() !== '') ||
+          information.some(s => s.trim() !== '') ||
+          attachments.length > 0 ||
+          (defaultPlaybookId && playbookId !== defaultPlaybookId)
+      );
+
+  const { DiscardDialog, markClean } = useUnsavedChangesWarning(isDirty);
 
   const pb = playbooks.find(p => p.id === playbookId);
 
@@ -150,6 +192,7 @@ function IssueEditor({ initial }: { initial?: Issue }) {
           attachments: attachments.filter(a => a.url.trim()),
           internalNotes: notes.trim(),
         });
+        markClean();
         const targetPb = playbooks.find(p => p.id === playbookId);
         navigate(`/playbooks/${targetPb?.slug || playbookId}/issues/${encodeURIComponent(updated.id)}`);
       } else {
@@ -169,6 +212,7 @@ function IssueEditor({ initial }: { initial?: Issue }) {
           attachments: attachments.filter(a => a.url.trim()),
           internalNotes: notes.trim(),
         });
+        markClean();
         const targetPb = playbooks.find(p => p.id === playbookId);
         navigate(`/playbooks/${targetPb?.slug || playbookId}/issues/${encodeURIComponent(issue.id)}`);
       }
@@ -386,6 +430,7 @@ function IssueEditor({ initial }: { initial?: Issue }) {
           </button>
         </div>
       </form>
+      <DiscardDialog />
     </div>
   );
 }

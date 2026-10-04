@@ -22,6 +22,7 @@ import { StringList, StepEditor, revealInvalid } from '../components/knowledge/E
 import { MediaUploadField } from '../components/knowledge/MediaUploadField';
 import { type FileMetadata } from '../components/knowledge/mediaUtils';
 import { getSignedMediaUrl } from '../services/mediaService';
+import { useUnsavedChangesWarning } from '../components/knowledge/useUnsavedChangesWarning';
 
 export function CreateGuide() {
   const { path, params } = useRouter();
@@ -193,6 +194,27 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
   };
 
   const hasChanges = !base || JSON.stringify(guideContent(content)) !== JSON.stringify(guideContent(base));
+
+  const isDirty = base
+    ? Boolean(JSON.stringify(guideContent(content)) !== JSON.stringify(guideContent(base)) || changes.trim() !== '')
+    : Boolean(
+        title.trim() !== '' ||
+          summary.trim() !== '' ||
+          info.trim() !== '' ||
+          notes.trim() !== '' ||
+          Boolean(video.trim() || videoStorageKey) ||
+          Boolean(pdf.trim() || pdfStorageKey) ||
+          status !== 'Draft' ||
+          difficulty !== 'Medium' ||
+          estimatedTime !== '15 min' ||
+          checklist.some(s => s.trim() !== '') ||
+          steps.some(s => s.title.trim() !== '' || s.description.trim() !== '') ||
+          problems.some(p => p.problem.trim() !== '' || p.solution.trim() !== '') ||
+          issueId !== (params.issue || '')
+      );
+
+  const { DiscardDialog, markClean } = useUnsavedChangesWarning(isDirty);
+
   const back = () => navigate(base && pb ? `/playbooks/${pb.slug}/guides/${base.id}` : '/create');
 
   const publish = async () => {
@@ -228,6 +250,7 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
             internalNotes: content.internalNotes
           }
         });
+        markClean();
         navigate(`/playbooks/${pb.slug}/guides/${updated.id}`);
       } else {
         const saved = await createGuide({
@@ -251,6 +274,7 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
           relatedItems: content.relatedItems,
           internalNotes: content.internalNotes
         });
+        markClean();
         navigate(`/playbooks/${pb.slug}/guides/${saved.id}`);
       }
     } catch (e) {
@@ -281,6 +305,7 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
           playbook={pb}
           issue={issue}
         />
+        <DiscardDialog />
       </div>
     );
   }
@@ -547,6 +572,7 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
           </button>
         </div>
       </form>
+      <DiscardDialog />
     </div>
   );
 }
