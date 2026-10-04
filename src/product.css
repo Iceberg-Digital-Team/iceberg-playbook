@@ -307,18 +307,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .icon-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
 .icon-options button { display:flex; align-items:center; gap:10px; padding:14px 12px; border:1px solid var(--border); border-radius:6px; text-align:left; }
 .icon-options button[aria-pressed="true"] { border-color:var(--iceberg-magenta); }
-.flow-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 28px; }
-.flow-options button { display:flex; justify-content:space-between; align-items:center; text-align:left; gap:16px; padding:24px 4px; border-bottom:1px solid var(--border); font-size:16px; }
-.flow-options button:hover { color:var(--iceberg-magenta); background:var(--light-background); }
-.flow-position { margin-bottom:12px; }
-.flow-result { display:flex; flex-direction:column; gap:18px; padding:28px 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-.flow-result h2 { margin:0; }.flow-result > a { align-self:flex-start; }
 .settings-page { gap:12px; }
 .settings-profile { margin:0; }.settings-profile > div { display:grid; grid-template-columns:120px 1fr; gap:16px; padding:12px 0; }
 .settings-profile dt { color:var(--secondary-text); font-size:14px; }.settings-profile dd { margin:0; overflow-wrap:anywhere; }
 .settings-row { display:flex; align-items:center; gap:18px; padding:16px 0; border-bottom:1px solid var(--border); }
 .settings-row > :first-child { flex:1; }.settings-row > a { color:var(--primary-text); font-weight:500; }
 .settings-row > button { color:var(--secondary-text); }
-@media(max-width:600px) { .flow-options { grid-template-columns:1fr; }.icon-options { grid-template-columns:repeat(2,minmax(0,1fr)); }.settings-profile > div { grid-template-columns:1fr; gap:4px; } }
+@media(max-width:600px) { .icon-options { grid-template-columns:repeat(2,minmax(0,1fr)); }.settings-profile > div { grid-template-columns:1fr; gap:4px; } }
 .plain-list { margin:0; padding-left:22px; font-size:16px; line-height:1.8; color:var(--secondary-text); }
 .plain-list li + li { margin-top:7px; }
