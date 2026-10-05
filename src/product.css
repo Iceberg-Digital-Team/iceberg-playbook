@@ -15,7 +15,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .btn-secondary:hover { background: var(--light-background); }
 .btn-primary svg, .btn-secondary svg { flex-shrink: 0; }
 .page { display: flex; flex-direction: column; gap: 32px; width: 100%; }
-.reading-page, .knowledge-detail, .guide-article { max-width: 840px; margin: 0 auto; }
+.reading-page, .guide-article { max-width: 840px; margin: 0 auto; }
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
 .page-heading h1 { margin: 0 0 12px; }
 .page-heading p { max-width: 660px; }
@@ -247,12 +247,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .guide-history li { padding:20px 0; }
 .guide-history p { font-size:14px; }
 /* The same readable editor is used for create and edit. */
-.editor, .knowledge-editor { max-width:800px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:26px; }
-.editor form, .knowledge-editor form { display:flex; flex-direction:column; gap:0; margin-top:0; }
+.editor { max-width:800px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:26px; }
+.editor form { display:flex; flex-direction:column; gap:0; margin-top:0; }
 .form-section { padding:26px 0; border:0; border-top:1px solid var(--border); }
 .form-section h2 { font-size:18px; margin:0 0 18px; }
 .form-section-body { display:flex; flex-direction:column; gap:18px; }
-.editor label, .knowledge-editor label { display:flex; flex-direction:column; gap:8px; font-weight:500; font-size:14px; }
+.editor label { display:flex; flex-direction:column; gap:8px; font-weight:500; font-size:14px; }
 .editor input, .editor select, .editor textarea { width:100%; min-width:0; padding:12px 14px; border:1px solid var(--border); border-radius:6px; background:var(--primary-white); font-weight:400; }
 .editor textarea { resize:vertical; }
 .editor input[readonly] { background:var(--light-background); color:var(--secondary-text); }
@@ -285,7 +285,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 @media(max-width:1100px) { .content-container { padding:36px 32px 60px; } .row-meta { gap:3px 9px; } }
 @media(max-width:768px) {
  .content-container { padding:26px 22px 48px; } .topbar { padding:0 20px; } .topbar-actions { gap:8px; } .search-shortcut-key { display:none; }
- .playbook-grid, .form-grid, .knowledge-grid { grid-template-columns:minmax(0,1fr); }
+ .playbook-grid, .form-grid { grid-template-columns:minmax(0,1fr); }
  .sidebar { height:100dvh; visibility:hidden; } .sidebar.open { visibility:visible; }
  .sidebar-close { display:flex; position:absolute; top:14px; right:12px; color:white; padding:8px; }
  .content-row { padding: 14px 6px; gap: 12px; }
