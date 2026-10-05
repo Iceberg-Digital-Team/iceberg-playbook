@@ -238,9 +238,6 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .document-row strong { font-size:14px; overflow-wrap:anywhere; }
 .document-row a { display:flex; align-items:center; gap:7px; font-size:14px; }
 .issue-connection { border:0; border-left:2px solid var(--iceberg-magenta); background:var(--light-background); padding:22px; border-radius:0; }
-.knowledge-detail { gap:36px; }
-.knowledge-detail > section > h3 { font-size:20px; font-weight:600; text-transform:none; letter-spacing:-.02em; margin-bottom:16px; }
-.knowledge-detail ul { font-size:16px; }
 .guide-toolbar .btn-secondary { padding:8px 12px; }
 .guide-toolbar > button { border:0; padding-left:0; color:var(--secondary-text); }
 .guide-history { margin-top:12px; }

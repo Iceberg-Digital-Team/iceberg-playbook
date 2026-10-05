@@ -1,15 +1,6 @@
-.knowledge-editor { width: 100%; max-width: 850px; margin: 0 auto; padding-bottom: 60px; }
-.knowledge-editor form { display: flex; flex-direction: column; gap: 32px; margin-top: 32px; }
-.knowledge-editor section { display: flex; flex-direction: column; gap: 18px; }
-.knowledge-editor label { display: flex; flex-direction: column; gap: 8px; font-weight: 600; font-size: 14px; }
-.knowledge-editor input, .knowledge-editor select, .knowledge-editor textarea { min-width: 0; width: 100%; padding: 11px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--primary-white); font-weight: 400; }
-.knowledge-editor textarea { resize: vertical; }
-.knowledge-editor input:focus, .knowledge-editor textarea:focus, .knowledge-editor select:focus { outline: 2px solid var(--iceberg-magenta); outline-offset: 2px; }
-.knowledge-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .knowledge-list { display: flex; flex-direction: column; gap: 10px; }
 .knowledge-list-row { display: flex; align-items: center; gap: 12px; }
 .knowledge-list-row button { min-width: 36px; min-height: 40px; }
-.knowledge-editor input[readonly] { background: var(--light-background); color: var(--secondary-text); }
 .knowledge-actions { display: flex; justify-content: flex-end; gap: 16px; }
 .knowledge-error { color: #a40044; padding: 14px; border: 1px solid var(--iceberg-magenta); border-radius: 8px; }
 .issue-selector { position: relative; }
@@ -22,17 +13,9 @@
 .issue-connection { border: 1px solid var(--border); border-left: 3px solid var(--iceberg-magenta); border-radius: 8px; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
 .issue-connection h2, .issue-connection h3 { margin: 0; }
 .issue-connection a { align-self: flex-start; }
-.issue-state { font-size: 13px; color: var(--secondary-text); font-weight: 400; margin-top: 5px; }
-.knowledge-detail { width: 100%; max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
-.knowledge-detail section p { white-space: pre-wrap; line-height: 1.7; }
-.knowledge-detail ul { padding-left: 22px; margin: 0; line-height: 1.8; }
-@media (max-width: 600px) { .knowledge-grid { grid-template-columns: 1fr; } .issue-connection { padding: 18px; } }
-.guide-editor input, .guide-editor textarea, .guide-editor select { min-width: 0; }
-.guide-editor input:focus-visible, .guide-editor textarea:focus-visible, .guide-editor select:focus-visible { outline: 2px solid var(--iceberg-magenta); outline-offset: 2px; }
-@media (max-width: 600px) { .guide-editor div[style*="grid-template-columns"] { grid-template-columns: minmax(0, 1fr) !important; } }
+@media (max-width: 600px) { .issue-connection { padding: 18px; } }
 .guide-article { display: flex; flex-direction: column; gap: 28px; width: 100%; max-width: 960px; margin: 0 auto; overflow-wrap: anywhere; }
 .guide-toolbar { justify-content: space-between; }
-.guide-metadata { font-size: 13px; color: var(--muted-text); margin: 0; }
 .guide-history-section { border-top: 1px solid var(--border); padding-top: 4px; }
 .guide-history-heading-wrap { margin: 0; font-size: inherit; font-weight: inherit; }
 .guide-history-toggle { width: calc(100% + 20px); display: block; text-align: left; background: transparent; border: none; border-radius: var(--radius-sm); padding: 12px 10px; margin: 0 -10px; cursor: pointer; transition: background var(--transition-fast); color: inherit; font-family: inherit; }
@@ -65,7 +48,6 @@
 .guide-restore-dialog::backdrop { background: rgb(0 0 0 / 35%); }
 .guide-restore-dialog p { line-height: 1.6; margin: 16px 0; }
 .guide-restore-dialog .knowledge-actions { justify-content: flex-end; margin-top: 24px; }
-.guide-editor form > div:last-child { flex-wrap: wrap; }
 @media (max-width: 600px) { .guide-version-line a, .guide-current { margin-left: 0; } .guide-article { gap: 22px; } }
 .guide-article .knowledge-actions, .guide-restore-dialog .knowledge-actions { flex-wrap: wrap; }
 .guide-article .knowledge-actions > button, .guide-article .knowledge-actions > a, .guide-restore-dialog button { flex-shrink: 0; white-space: normal; }
