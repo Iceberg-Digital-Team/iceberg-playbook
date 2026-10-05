@@ -1,14 +1,4 @@
-// Ephemeral in-memory store for frontend mock media in current session
-const sessionMediaMap = new Map<string, { video?: string; pdf?: string; screenshots?: Record<number, string> }>();
 const mediaMetadataMap = new Map<string, FileMetadata>();
-
-export function setGuideSessionMedia(guideId: string, media: { video?: string; pdf?: string; screenshots?: Record<number, string> }) {
-  sessionMediaMap.set(guideId, media);
-}
-
-export function getGuideSessionMedia(guideId: string) {
-  return sessionMediaMap.get(guideId);
-}
 
 export interface FileMetadata {
   name: string;
