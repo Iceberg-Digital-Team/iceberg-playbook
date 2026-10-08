@@ -29,6 +29,18 @@ export interface CreatePlaybookInput {
   id?: string;
 }
 
+export interface DeletedPlaybookConflict {
+  id: string;
+  name: string;
+  code: string;
+  slug: string;
+}
+
+export type PlaybookConflictCheckResult =
+  | { type: 'AVAILABLE' }
+  | { type: 'ACTIVE_CONFLICT'; message: string; field: 'name' | 'code' }
+  | { type: 'DELETED_CONFLICT'; playbook: DeletedPlaybookConflict };
+
 export interface PlaybookCounts {
   issueCount?: number;
   guideCount?: number;
@@ -209,6 +221,129 @@ export async function getPlaybookBySlug(
   return mapPlaybookRowToPlaybook(data, countMap[data.id]);
 }
 
+export async function checkPlaybookConflict(
+  params: { name: string; code: string; slug?: string },
+  client: SupabaseClient = defaultSupabase
+): Promise<PlaybookConflictCheckResult> {
+  const trimmedName = params.name.trim();
+  const trimmedCode = params.code.trim().toUpperCase();
+  const slug = params.slug?.trim() || toSlug(trimmedName);
+
+  if (!trimmedName || !slug) {
+    throw new Error('Enter a valid Playbook name.');
+  }
+
+  if (!trimmedCode) {
+    throw new Error('Enter a code prefix.');
+  }
+
+  // 1. Try RPC fn_check_playbook_conflict if available
+  if (typeof client?.rpc === 'function') {
+    try {
+      const { data, error } = await client.rpc('fn_check_playbook_conflict', {
+        p_name: trimmedName,
+        p_slug: slug,
+        p_code: trimmedCode,
+      });
+
+      if (!error && Array.isArray(data)) {
+        if (data.length > 0) {
+          const match = data[0];
+          if (match.conflict_type === 'ACTIVE_CODE') {
+            return {
+              type: 'ACTIVE_CONFLICT',
+              field: 'code',
+              message: 'A Playbook with this code prefix already exists. Choose another.',
+            };
+          }
+          if (match.conflict_type === 'ACTIVE_NAME') {
+            return {
+              type: 'ACTIVE_CONFLICT',
+              field: 'name',
+              message: 'A Playbook with this name already exists. Choose another.',
+            };
+          }
+          if (match.conflict_type === 'DELETED_CONFLICT') {
+            return {
+              type: 'DELETED_CONFLICT',
+              playbook: {
+                id: match.playbook_id,
+                name: match.playbook_name,
+                code: match.playbook_code,
+                slug: match.playbook_slug,
+              },
+            };
+          }
+        }
+        return { type: 'AVAILABLE' };
+      }
+    } catch {
+      // Fallback to table queries below if RPC call is not available in mock/test
+    }
+  }
+
+  // 2. Fallback: Table-level active check
+  if (typeof client?.from === 'function') {
+    const [codeCheck, slugCheck, nameCheck] = await Promise.all([
+      client.from('playbooks').select('id, name, code, slug').eq('code', trimmedCode).is('deleted_at', null).maybeSingle(),
+      client.from('playbooks').select('id, name, code, slug').eq('slug', slug).is('deleted_at', null).maybeSingle(),
+      client.from('playbooks').select('id, name, code, slug').ilike('name', trimmedName).is('deleted_at', null).maybeSingle(),
+    ]);
+
+    if (codeCheck?.data) {
+      return {
+        type: 'ACTIVE_CONFLICT',
+        field: 'code',
+        message: 'A Playbook with this code prefix already exists. Choose another.',
+      };
+    }
+    if (slugCheck?.data || nameCheck?.data) {
+      return {
+        type: 'ACTIVE_CONFLICT',
+        field: 'name',
+        message: 'A Playbook with this name already exists. Choose another.',
+      };
+    }
+
+    // Fallback: Table-level soft-deleted check
+    try {
+      const { data: deletedMatch } = await client
+        .from('playbooks')
+        .select('id, name, code, slug')
+        .not('deleted_at', 'is', null)
+        .or(`code.eq.${trimmedCode},slug.eq.${slug},id.eq.${slug}`)
+        .maybeSingle();
+
+      if (deletedMatch) {
+        return {
+          type: 'DELETED_CONFLICT',
+          playbook: {
+            id: deletedMatch.id,
+            name: deletedMatch.name,
+            code: deletedMatch.code,
+            slug: deletedMatch.slug,
+          },
+        };
+      }
+    } catch {
+      // Ignore if RLS blocks soft-deleted select
+    }
+  }
+
+  return { type: 'AVAILABLE' };
+}
+
+export async function findDeletedPlaybookConflict(
+  input: { name: string; code: string; slug?: string },
+  client: SupabaseClient = defaultSupabase
+): Promise<DeletedPlaybookConflict | null> {
+  const result = await checkPlaybookConflict(input, client);
+  if (result.type === 'DELETED_CONFLICT') {
+    return result.playbook;
+  }
+  return null;
+}
+
 export async function createPlaybook(
   input: CreatePlaybookInput,
   client: SupabaseClient = defaultSupabase
@@ -234,18 +369,15 @@ export async function createPlaybook(
     throw new Error('Enter a description.');
   }
 
-  // Pre-insert uniqueness verification
-  const [codeCheck, slugCheck, nameCheck] = await Promise.all([
-    client.from('playbooks').select('id').eq('code', trimmedCode).is('deleted_at', null).maybeSingle(),
-    client.from('playbooks').select('id').eq('slug', slug).is('deleted_at', null).maybeSingle(),
-    client.from('playbooks').select('id').ilike('name', trimmedName).is('deleted_at', null).maybeSingle(),
-  ]);
-
-  if (codeCheck.data) {
-    throw new Error('A Playbook with this code prefix already exists. Choose another.');
+  // Pre-insert conflict verification
+  const conflict = await checkPlaybookConflict({ name: trimmedName, code: trimmedCode, slug }, client);
+  if (conflict.type === 'ACTIVE_CONFLICT') {
+    throw new Error(conflict.message);
   }
-  if (slugCheck.data || nameCheck.data) {
-    throw new Error('A Playbook with this name already exists. Choose another.');
+  if (conflict.type === 'DELETED_CONFLICT') {
+    throw new Error(
+      `A deleted Playbook with this name or code already exists ('${conflict.playbook.name}' - ${conflict.playbook.code}). Would you like to restore it instead?`
+    );
   }
 
   const id = input.id?.trim() || slug;
@@ -284,6 +416,44 @@ export async function createPlaybook(
   }
 
   return mapPlaybookRowToPlaybook(data);
+}
+
+export async function restorePlaybook(
+  id: string,
+  client: SupabaseClient = defaultSupabase
+): Promise<Playbook> {
+  const cleanId = id.trim();
+  if (!cleanId) {
+    throw new Error('Invalid Playbook ID.');
+  }
+
+  const { error } = await client.rpc('fn_restore_playbook', {
+    p_playbook_id: cleanId,
+  });
+
+  if (error) {
+    if (error.code === '42501' || error.message.includes('Permission denied')) {
+      throw new Error('Permission denied. Support or Admin role required.');
+    }
+    if (error.message.includes('already active')) {
+      throw new Error('Playbook is already active.');
+    }
+    throw new Error(error.message || 'Could not restore Playbook.');
+  }
+
+  const { data, error: fetchError } = await client
+    .from('playbooks')
+    .select('id, slug, name, code, description, icon, owner, visibility, created_at, updated_at, deleted_at, deleted_by')
+    .eq('id', cleanId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (fetchError || !data) {
+    throw new Error(fetchError?.message || 'Could not load restored Playbook.');
+  }
+
+  const countMap = await fetchActivePlaybookCounts(client, data.id);
+  return mapPlaybookRowToPlaybook(data, countMap[data.id]);
 }
 
 export async function softDeletePlaybook(
