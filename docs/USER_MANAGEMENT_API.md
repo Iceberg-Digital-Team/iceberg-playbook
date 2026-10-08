@@ -72,6 +72,24 @@ One record per link. A record is either an **invitation** (new user) or a **pass
 The raw token is **never** part of this model. The backend stores only a hash of it. The link is
 returned once, when it is created (`CreatedLink`, §6), and can never be read again.
 
+**Storage (reference database, `public.user_invitations`):**
+
+| Column | Notes |
+| :--- | :--- |
+| `id, purpose, email, full_name, role, user_id, status, expires_at, accepted_at, revoked_at, invited_by, created_at` | Map 1:1 to the fields above. `purpose`, `full_name`, `user_id` were added to the team lead's field list for this contract (needs team lead OK). |
+| `token_hash` | Lower-case hex SHA-256 of the token (64 chars), unique. Never a plaintext token. |
+| `issued_at` | When the current token was issued; changes on resend. The 7-day window is measured from here. |
+| `updated_at` | Last change of the row. |
+
+- **Stored vs effective status:** the database stores only `Pending`, `Accepted`, `Revoked`.
+  `Expired` is never stored; a stored `Pending` row with `expires_at <= now` is `Expired`
+  (`fn_invitation_effective_status`). Admin lists return the effective status.
+- **Token format:** the server creates 32 random bytes, encodes them base64url for the link, and sends
+  only `lower(hex(sha256(token)))` to the database. The raw token never reaches SQL, database logs or
+  audit logs.
+- Email is stored lower-case and trimmed. Comparisons with existing `profiles.email` (which is not
+  normalized) use `lower(btrim(...))` on both sides.
+
 ---
 
 ## 4. Roles
@@ -289,17 +307,68 @@ never send to the server, so it stays out of server logs too.
 
 ---
 
-## 11. Current Supabase reference implementation (planned in tasks B–D)
+## 11. Current Supabase reference implementation
 
-> Status: **planned**. Nothing below exists yet.
-> The split of content between migrations 10 and 11 below is a **proposal**; task B decides the final split.
+> Status: migrations 10 and 11 are **written (task B) but not deployed** (`Mode: PROPOSED`).
+> Edge Functions (task C) and the adapter (task D) are planned.
+> Supabase-specific lines in the SQL are marked `[SUPABASE]`.
 
-| Part | Task | Plan |
+| Part | Task | Content |
 | :--- | :--- | :--- |
-| `supabase/migrations/10_user_management.sql` | B | User status (`Active` / `Disabled`) for profiles and the rules that block sign-in for disabled users. |
-| `supabase/migrations/11_user_invitation_security.sql` | B | Invitation table with the team lead's fields: `id, email, role, status, token_hash, expires_at, accepted_at, revoked_at, invited_by, created_at`. Extra fields needed by this contract (`full_name`, `purpose`, `user_id`) are an open point for task B (§13). |
-| Supabase Edge Functions | C | One function per endpoint group in §9. They verify the caller's session, check active Admin, enforce §5 and §10, and are the only place that uses `service_role`. The server must enforce the same rules as `adminUserRules.ts`; task C decides whether this file can be reused. |
-| `src/services/admin/supabaseAdminUserAdapter.ts` | D | Implements `AdminUserAdapter` by calling the Edge Functions, maps responses to the domain models and errors to `AdminUserError` codes. Wired with `configureAdminUserService(adapter, { activationBaseUrl })`. |
+| `supabase/migrations/10_user_management.sql` | B (written) | Data model: `profiles.status` (`Active` / `Disabled`, default `Active`, backfills existing rows), table `user_invitations` (§3), CHECK constraints, partial unique indexes (one open invitation per email, one open reset link per user), `fn_invitation_effective_status`. |
+| `supabase/migrations/11_user_invitation_security.sql` | B (written) | Security: RLS on `user_invitations` with no policies, privileges, triggers, the functions below, and the changes to existing behavior listed in §13. |
+| `supabase/tests/user_management_tests.sql` | B (written) | 17 database tests in `BEGIN … ROLLBACK`. |
+| Supabase Edge Functions | C (planned) | One function per endpoint group in §9. They hash tokens, call the database functions below, create / update auth users, and are the only place that uses `service_role`. The server must enforce the same rules as `adminUserRules.ts`; task C decides whether this file can be reused. |
+| `src/services/admin/supabaseAdminUserAdapter.ts` | D (planned) | Implements `AdminUserAdapter` by calling the Edge Functions, maps responses to the domain models and errors to `AdminUserError` codes. Wired with `configureAdminUserService(adapter, { activationBaseUrl })`. |
+
+### Database functions
+
+All are `SECURITY DEFINER` with `SET search_path = ''` and explicit `REVOKE` / `GRANT`.
+
+| Function | Contract operation | Caller |
+| :--- | :--- | :--- |
+| `fn_admin_list_users()` | `listUsers` | Admin's own JWT (`authenticated`) |
+| `fn_admin_create_invitation(email, full_name, role, expires_at, token_hash)` | `inviteUser` | Admin's own JWT |
+| `fn_admin_resend_invitation(invitation_id, expires_at, token_hash)` | `resendInvitation` | Admin's own JWT |
+| `fn_admin_revoke_invitation(invitation_id)` | `revokeInvitation` | Admin's own JWT |
+| `fn_admin_change_user_role(user_id, role)` | `changeUserRole` | Admin's own JWT |
+| `fn_admin_disable_user(user_id)` | `disableUser` (also revokes open reset links) | Admin's own JWT |
+| `fn_admin_enable_user(user_id)` | `enableUser` | Admin's own JWT |
+| `fn_admin_create_password_reset_link(user_id, expires_at, token_hash)` | `createPasswordResetLink` (revokes older open ones) | Admin's own JWT |
+| `fn_get_activation_link(token_hash)` | `getInvitation` | server only (`service_role`) |
+| `fn_accept_invitation(token_hash, auth_user_id)` | `activateAccount` (invitation) | server only |
+| `fn_accept_password_reset(token_hash)` | `activateAccount` (password reset) | server only |
+
+Every `fn_admin_*` function checks that `auth.uid()` is an **active Admin**. Every admin action writes
+`public.audit_logs` (`entity_type` `user` or `invitation`) without token, hash or password.
+
+**Triggers** protect the rules on every write path, not only through the functions:
+`trg_profiles_guard_role_status` (role / status change only through the functions; no self action;
+last active Admin, race-safe with an advisory lock), `trg_user_invitations_guard` (Accepted / Revoked
+are final; link target fields never change), `trg_user_invitations_no_delete` (no hard delete).
+
+**Error convention:** `RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = '<AdminUserErrorCode>',
+DETAIL = '<English text>', HINT = '<suggestion JSON>'`. The Edge Function maps `MESSAGE` 1:1 to
+`AdminUserError.code`, `DETAIL` to the message and `HINT` to `suggestion`. Any other SQLSTATE → `unknown`.
+
+### Activation order (task C)
+
+**Invitation**
+1. Hash the token → `fn_get_activation_link` (dead link → `token_*`).
+2. Find an auth user with the same email (`lower(btrim(...))` on both sides).
+   None → create it. Exists **and has no profile** (left over from an earlier failed try) → reuse it and
+   set its password. Exists **with** a profile → stop with `email_in_use`; never change that password.
+3. `fn_accept_invitation(hash, auth_user_id)` — one transaction: lock the link (`FOR UPDATE`), re-check
+   it, check the auth email matches, create the `Active` profile with the invited name and role, mark
+   the link `Accepted`, write audit.
+4. If step 3 fails, nothing is saved and the link stays `Pending`. The auth user without a profile cannot
+   sign in and is reused on retry. Nothing is deleted.
+
+**Password reset**
+1. Hash the token → `fn_get_activation_link`.
+2. `fn_accept_password_reset(hash)` first: the link is claimed in the database (single use).
+3. Then set the new password for the returned `user_id`. If this fails, the link is already used and the
+   Admin creates a new one.
 
 ---
 
@@ -354,7 +423,35 @@ Other decisions in this contract:
 - A picked expiry date means the end of that local day, capped at 7 days.
 - Password: 8 characters minimum, 72 bytes maximum.
 
+Database decisions (task B):
+
+- Role and status can change only through the admin functions (trigger), never by a direct API update.
+- Admin functions are called with the Admin's own JWT; link lookup / accept only by the server.
+- Statuses are stored as TEXT + CHECK (same strings as the contract); `Expired` is computed, never stored.
+- Token hash: SHA-256, 64 lower-case hex chars; hashing happens on the server.
+- Activation retry reuses only an auth user with the same email and **no** profile; nothing is deleted.
+
+**Changes to existing behavior (migration 11) — needs team lead approval:**
+
+- Policy `profiles_delete_admin_only` (migration 04) is dropped and `DELETE` on `profiles` is revoked
+  from `anon` / `authenticated`: no hard delete of users through the API.
+- `fn_user_role()` (04) returns no role for a `Disabled` user, so `fn_is_admin()` and
+  `fn_is_support_or_admin()` deny a disabled user with a session that has not expired yet.
+- `fn_get_current_actor()` (03) resolves a `Disabled` user to `Viewer`.
+- New trigger on `profiles`: `role` / `status` cannot be changed by a direct API update.
+  Name / avatar updates are unchanged.
+- `user_invitations.user_id` / `invited_by` use `ON DELETE RESTRICT`: deleting a user who created
+  links or has a reset link fails (history is kept).
+
 Open:
 
-- Invitation fields `full_name`, `purpose`, `user_id` are not in the team lead's field list (task B).
-- Who deploys migrations and Edge Functions (tasks B and C).
+- Invitation fields `full_name`, `purpose`, `user_id` were added to the team lead's field list — needs
+  team lead OK.
+- Policy `profiles_insert_admin_only` (04) still lets an Admin insert a profile directly through the API,
+  bypassing the invitation flow and audit. The frontend does not use it. Team lead decides.
+- Task C: two concurrent activation requests with the same invitation token could let the second request
+  reset the password of the auth user the first request just created. Task C must handle it (for
+  example: claim / lock the link before creating or updating the auth user).
+- Task C: on disable, also block sign-in and end sessions in the auth service; on enable, allow again.
+- Who deploys migrations and Edge Functions (tasks B and C). The migrations and SQL tests have not been
+  run against a database yet.

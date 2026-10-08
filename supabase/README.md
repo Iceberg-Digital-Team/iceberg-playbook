@@ -36,6 +36,8 @@ All database schema definitions, security rules, routines, and seed datasets are
 | **`07_soft_delete_security.sql`** | Elevates soft-delete functions (`fn_soft_delete_*`) to `SECURITY DEFINER` with `SET search_path = ''`. Prevents RLS permission denial when non-admin users (such as `Support`) update records to set `deleted_at = NOW()`. |
 | **`08_monotonic_code_generation.sql`** | Upgrades `fn_generate_issue_code`, `fn_generate_guide_code`, and `fn_generate_sop_code` to `SECURITY DEFINER` routines that lock the parent playbook row (`FOR UPDATE`) and compute sequence numbers across **all** historical rows (active + soft-deleted), guaranteeing non-reusable monotonic IDs. |
 | **`09_issue_jira_code.sql`** | Adds the optional `jira_code TEXT DEFAULT NULL` column to `public.issues` and creates a partial index `idx_issues_jira_code` on active issues. |
+| **`10_user_management.sql`** | User Management data model: `profiles.status` (`Active` / `Disabled`), the `user_invitations` table (invitation and password reset links, token stored only as SHA-256 hash), constraints and indexes. See `docs/USER_MANAGEMENT_API.md`. *(PROPOSED, not deployed yet.)* |
+| **`11_user_invitation_security.sql`** | User Management security: RLS and privileges for `user_invitations`, role/status and no-delete triggers, `fn_admin_*` / activation functions, and changes to `fn_user_role`, `fn_get_current_actor` and the `profiles` delete policy. *(PROPOSED, not deployed yet.)* |
 
 ---
 
@@ -55,6 +57,8 @@ The following migrations establish the schema, security model, and stored proced
 6. `07_soft_delete_security.sql`
 7. `08_monotonic_code_generation.sql`
 8. `09_issue_jira_code.sql`
+9. `10_user_management.sql`
+10. `11_user_invitation_security.sql`
 
 > [!IMPORTANT]
 > **Production Guidance for `05_seed_data.sql`**:
@@ -326,6 +330,8 @@ psql "$DATABASE_URL" -f supabase/tests/verification_tests.sql
 
 A successful execution will emit `NOTICE` statements for all 9 tests and report:
 `NOTICE: === ALL 9 ISOLATED VERIFICATION TESTS PASSED (9/9) ===` followed by `ROLLBACK`.
+
+User Management tests (after migrations 10 and 11): `supabase/tests/user_management_tests.sql` — 17 tests in `BEGIN … ROLLBACK`, ends with `NOTICE: === ALL 17 USER MANAGEMENT TESTS PASSED (17/17) ===`.
 
 ---
 
