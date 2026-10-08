@@ -38,6 +38,8 @@ All database schema definitions, security rules, routines, and seed datasets are
 | **`09_issue_jira_code.sql`** | Adds the optional `jira_code TEXT DEFAULT NULL` column to `public.issues` and creates a partial index `idx_issues_jira_code` on active issues. |
 | **`10_user_management.sql`** | User Management data model: `profiles.status` (`Active` / `Disabled`), the `user_invitations` table (invitation and password reset links, token stored only as SHA-256 hash), constraints and indexes. See `docs/USER_MANAGEMENT_API.md`. *(PROPOSED, not deployed yet.)* |
 | **`11_user_invitation_security.sql`** | User Management security: RLS and privileges for `user_invitations`, role/status and no-delete triggers, `fn_admin_*` / activation functions, and changes to `fn_user_role`, `fn_get_current_actor` and the `profiles` delete policy. *(PROPOSED, not deployed yet.)* |
+| **`12_auth_user_lookup.sql`** | Server-only `fn_find_auth_user_by_email` used by the `auth-links` Edge Function during account activation. *(PROPOSED, not deployed yet.)* |
+| **`supabase/functions/`** (Edge Functions) | `admin-users` (admin operations, caller JWT) and `auth-links` (link lookup + activation, deployed with `--no-verify-jwt`), shared code in `_shared/`. Deploy steps: `docs/USER_MANAGEMENT_API.md` §14. *(Not deployed yet.)* |
 
 ---
 
@@ -59,6 +61,7 @@ The following migrations establish the schema, security model, and stored proced
 8. `09_issue_jira_code.sql`
 9. `10_user_management.sql`
 10. `11_user_invitation_security.sql`
+11. `12_auth_user_lookup.sql`
 
 > [!IMPORTANT]
 > **Production Guidance for `05_seed_data.sql`**:
@@ -332,6 +335,8 @@ A successful execution will emit `NOTICE` statements for all 9 tests and report:
 `NOTICE: === ALL 9 ISOLATED VERIFICATION TESTS PASSED (9/9) ===` followed by `ROLLBACK`.
 
 User Management tests (after migrations 10 and 11): `supabase/tests/user_management_tests.sql` — 17 tests in `BEGIN … ROLLBACK`, ends with `NOTICE: === ALL 17 USER MANAGEMENT TESTS PASSED (17/17) ===`.
+
+Auth user lookup tests (after migration 12): `supabase/tests/auth_user_lookup_tests.sql` — 4 tests in `BEGIN … ROLLBACK`, ends with `NOTICE: === ALL 4 AUTH USER LOOKUP TESTS PASSED (4/4) ===`.
 
 ---
 

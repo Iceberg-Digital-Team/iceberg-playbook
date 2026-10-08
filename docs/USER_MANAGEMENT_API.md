@@ -284,6 +284,39 @@ A token in a URL path ends up in server access logs, proxy and CDN logs, and mon
 POST body it does not. The `#/activate?token=` part of the page URL is a hash fragment, which browsers
 never send to the server, so it stays out of server logs too.
 
+### Supabase Edge Function URLs (reference implementation, task C)
+
+| Logical path (above) | Edge Function URL |
+| :--- | :--- |
+| `/api/admin/<rest>` | `https://<project>.supabase.co/functions/v1/admin-users/<rest>` |
+| `/api/auth/<rest>` | `https://<project>.supabase.co/functions/v1/auth-links/<rest>` |
+
+- **`admin-users`** — requires `Authorization: Bearer <user access token>` (missing / malformed → 401
+  `unauthenticated` before any database call). The header is forwarded to the database with the
+  publishable key, so every `fn_admin_*` function checks `auth.uid()` itself. No user id is taken from
+  the body. Success statuses: `201` for created links (`POST /invitations`, `POST /users/:id/password-links`),
+  `204` for revoke, `200` otherwise.
+- **`auth-links`** — public (deployed with `--no-verify-jwt`), authorized only by the link token. Uses
+  the secret key for the server-only database functions and Supabase Auth admin calls.
+- **Tokens**: 32 random bytes (Web Crypto), base64url in the link (43 characters). Only the lower-case hex
+  SHA-256 is sent to SQL. An incoming token is trimmed; a wrong format → 400 `token_invalid` without a
+  database call.
+- **Input checks before any database call**: JSON object body of at most 16 KB, ids are UUIDs, `role`
+  is a `Role`, `expiresAt` is a date, the password follows §8 → otherwise 400 `invalid_input`.
+- **Routing**: unknown path → 404 `not_found`; known path with another method → 405 (code
+  `invalid_input`) with an `Allow` header; `OPTIONS` → 204 preflight.
+- **Errors**: `{ "error": { "code", "message", "suggestion" } }`, statuses as above, plus 500 `unknown`
+  for anything unexpected (generic message). Logs contain only the event, the database function name and
+  the SQLSTATE — never tokens, hashes, passwords, emails, keys or request bodies.
+- **CORS**: env `ALLOWED_ORIGINS` (comma-separated origins). A request with an allowed `Origin` gets that
+  origin echoed in `Access-Control-Allow-Origin` (+ `Vary: Origin`). Never `*`, never
+  `Access-Control-Allow-Credentials` (Bearer header, no cookies). A request with any other `Origin` → 403
+  `forbidden`. **`ALLOWED_ORIGINS` missing or empty → fail closed**: every request with an `Origin` gets
+  403 and a log line `cors_not_configured`. Requests without `Origin` (server to server) are processed.
+- Code: `supabase/functions/admin-users/`, `supabase/functions/auth-links/`, shared code in
+  `supabase/functions/_shared/`. Each function has a thin Deno `index.ts` and a pure `handler.ts`
+  (tested in Node with fakes).
+
 ---
 
 ## 10. Security rules
@@ -309,16 +342,17 @@ never send to the server, so it stays out of server logs too.
 
 ## 11. Current Supabase reference implementation
 
-> Status: migrations 10 and 11 are **written (task B) but not deployed** (`Mode: PROPOSED`).
-> Edge Functions (task C) and the adapter (task D) are planned.
-> Supabase-specific lines in the SQL are marked `[SUPABASE]`.
+> Status: migrations 10, 11 and 12 and the Edge Functions are **written (tasks B, C) but not deployed**
+> (`Mode: PROPOSED`). The adapter (task D) is planned. Supabase-specific lines in the SQL are marked
+> `[SUPABASE]`. Deployment steps: §14.
 
 | Part | Task | Content |
 | :--- | :--- | :--- |
 | `supabase/migrations/10_user_management.sql` | B (written) | Data model: `profiles.status` (`Active` / `Disabled`, default `Active`, backfills existing rows), table `user_invitations` (§3), CHECK constraints, partial unique indexes (one open invitation per email, one open reset link per user), `fn_invitation_effective_status`. |
 | `supabase/migrations/11_user_invitation_security.sql` | B (written) | Security: RLS on `user_invitations` with no policies, privileges, triggers, the functions below, and the changes to existing behavior listed in §13. |
 | `supabase/tests/user_management_tests.sql` | B (written) | 17 database tests in `BEGIN … ROLLBACK`. |
-| Supabase Edge Functions | C (planned) | One function per endpoint group in §9. They hash tokens, call the database functions below, create / update auth users, and are the only place that uses `service_role`. The server must enforce the same rules as `adminUserRules.ts`; task C decides whether this file can be reused. |
+| `supabase/migrations/12_auth_user_lookup.sql` | C (written) | `fn_find_auth_user_by_email(email)` → `(user_id, has_profile)`, server only, used during activation. Tests: `supabase/tests/auth_user_lookup_tests.sql`. |
+| `supabase/functions/admin-users`, `supabase/functions/auth-links` | C (written) | Edge Functions for §9 (URLs and behavior in §9). They hash tokens, call the database functions below, create / update auth users, and are the only place that uses the secret key and `auth.admin`. Business rules are enforced by the database; the password rule is mirrored in `supabase/functions/_shared/rules.ts` (a test keeps it identical to `adminUserRules.ts`). |
 | `src/services/admin/supabaseAdminUserAdapter.ts` | D (planned) | Implements `AdminUserAdapter` by calling the Edge Functions, maps responses to the domain models and errors to `AdminUserError` codes. Wired with `configureAdminUserService(adapter, { activationBaseUrl })`. |
 
 ### Database functions
@@ -338,6 +372,7 @@ All are `SECURITY DEFINER` with `SET search_path = ''` and explicit `REVOKE` / `
 | `fn_get_activation_link(token_hash)` | `getInvitation` | server only (`service_role`) |
 | `fn_accept_invitation(token_hash, auth_user_id)` | `activateAccount` (invitation) | server only |
 | `fn_accept_password_reset(token_hash)` | `activateAccount` (password reset) | server only |
+| `fn_find_auth_user_by_email(email)` (migration 12) | activation helper: `(user_id, has_profile)` | server only |
 
 Every `fn_admin_*` function checks that `auth.uid()` is an **active Admin**. Every admin action writes
 `public.audit_logs` (`entity_type` `user` or `invitation`) without token, hash or password.
@@ -351,24 +386,49 @@ are final; link target fields never change), `trg_user_invitations_no_delete` (n
 DETAIL = '<English text>', HINT = '<suggestion JSON>'`. The Edge Function maps `MESSAGE` 1:1 to
 `AdminUserError.code`, `DETAIL` to the message and `HINT` to `suggestion`. Any other SQLSTATE → `unknown`.
 
-### Activation order (task C)
+### Activation order (`auth-links`, `POST /activate`)
+
+Before any database call: the token format and the password rules (§8) are checked.
 
 **Invitation**
 1. Hash the token → `fn_get_activation_link` (dead link → `token_*`).
-2. Find an auth user with the same email (`lower(btrim(...))` on both sides).
-   None → create it. Exists **and has no profile** (left over from an earlier failed try) → reuse it and
-   set its password. Exists **with** a profile → stop with `email_in_use`; never change that password.
-3. `fn_accept_invitation(hash, auth_user_id)` — one transaction: lock the link (`FOR UPDATE`), re-check
-   it, check the auth email matches, create the `Active` profile with the invited name and role, mark
-   the link `Accepted`, write audit.
-4. If step 3 fails, nothing is saved and the link stays `Pending`. The auth user without a profile cannot
-   sign in and is reused on retry. Nothing is deleted.
+2. `fn_find_auth_user_by_email(email)` (`lower(btrim(...))` on both sides):
+   - account **with** a profile → 409 `email_in_use`; its password is never changed;
+   - no account → `auth.admin.createUser({ email, password, email_confirm: true })`, then
+     `fn_accept_invitation(hash, new_id)`. If `createUser` reports that the email already exists (a
+     concurrent request), look up again and continue as below (or `email_in_use`);
+   - account **without** a profile (left over from an earlier failed try) →
+     `fn_accept_invitation(hash, id)` **first**, then `auth.admin.updateUserById(id, { password, email_confirm: true })`.
+3. `fn_accept_invitation` is one transaction: lock the link (`FOR UPDATE`), re-check it, check the auth
+   email matches, create the `Active` profile with the invited name and role, mark the link `Accepted`,
+   write audit. If it fails, nothing is saved and the link stays `Pending`; an auth user without a profile
+   cannot sign in and is reused on retry. Nothing is deleted (`auth.admin.deleteUser` is never used).
+4. **Concurrency:** the password of an existing auth user is changed only **after** this request's
+   `fn_accept_invitation` succeeded. Only one request can succeed (row lock); a second request with the
+   same token gets `token_used` before it touches any password. A new auth user gets its password only
+   from the request that created it. So the final password belongs to the request that reported success.
+5. If the password update fails after the accept → 500 `unknown`: "Your account was created, but the
+   password could not be saved. Ask your Admin for a password link."
 
 **Password reset**
 1. Hash the token → `fn_get_activation_link`.
 2. `fn_accept_password_reset(hash)` first: the link is claimed in the database (single use).
-3. Then set the new password for the returned `user_id`. If this fails, the link is already used and the
-   Admin creates a new one.
+3. `auth.admin.updateUserById(user_id, { password })`. If this fails → 500 `unknown`: "Your link was
+   used, but the new password could not be saved. Ask your Admin for a new password link." `user_id` is
+   never returned to the browser.
+
+### Disable / enable (`admin-users`)
+
+1. `fn_admin_disable_user` / `fn_admin_enable_user` with the caller's JWT.
+2. Then Supabase Auth: `auth.admin.updateUserById(id, { ban_duration: '876000h' })` (disable) or
+   `{ ban_duration: 'none' }` (enable). A ban blocks new sign-ins and refresh-token renewals.
+3. If step 2 fails, step 1 is rolled back with the opposite function (caller's JWT) and the response is
+   500 `unknown`: "Could not block sign-in. The user was not disabled. Try again." (or "Could not allow
+   sign-in. The user is still disabled. Try again."). If the rollback also fails: "The user is disabled
+   in the app, but sign-in could not be blocked. Contact the system owner." (or the enable variant).
+   Never a silent success. Audit logs show both steps.
+4. Sessions: Supabase has no admin "sign out user X". An access token already issued stays valid until it
+   expires (default 1 hour), but migration 11 makes RLS deny a Disabled user everything.
 
 ---
 
@@ -449,9 +509,84 @@ Open:
   team lead OK.
 - Policy `profiles_insert_admin_only` (04) still lets an Admin insert a profile directly through the API,
   bypassing the invitation flow and audit. The frontend does not use it. Team lead decides.
-- Task C: two concurrent activation requests with the same invitation token could let the second request
-  reset the password of the auth user the first request just created. Task C must handle it (for
-  example: claim / lock the link before creating or updating the auth user).
-- Task C: on disable, also block sign-in and end sessions in the auth service; on enable, allow again.
-- Who deploys migrations and Edge Functions (tasks B and C). The migrations and SQL tests have not been
-  run against a database yet.
+- ~~Task C: concurrent activation requests could reset the password of a just-created auth user.~~
+  Handled in task C by ordering (§11 activation order, step 4); no database change.
+- ~~Task C: on disable, also block sign-in in the auth service.~~ Handled in task C with a Supabase Auth
+  ban + rollback on failure (§11). Already issued access tokens stay valid until they expire (≤ 1 hour);
+  RLS denies them.
+- Rate limiting for `/invitations/lookup` and `/activate` (§10) is not implemented. Team lead decides
+  (e.g. at the API gateway).
+- Supabase Auth has its own password policy. If it is stricter than the app rule (8 characters, no
+  required character classes) or leaked password protection is on, a password that passes the app rule
+  can be rejected after a reset link (or a reused account's invitation) was already used. Keep the
+  policy aligned (§14 checklist).
+- Who deploys migrations and Edge Functions (§14). The migrations and SQL tests have not been run
+  against a database yet.
+
+---
+
+## 14. Deployment (team lead)
+
+> Commands are documented only. Nothing was deployed or run in tasks A–C.
+
+### Order
+
+1. Apply migrations `10_user_management.sql` → `11_user_invitation_security.sql` →
+   `12_auth_user_lookup.sql` (after 01–09). Then run the SQL tests in a test project:
+   `supabase/tests/verification_tests.sql`, `supabase/tests/user_management_tests.sql`,
+   `supabase/tests/auth_user_lookup_tests.sql` (all `BEGIN … ROLLBACK`).
+2. Type-check the functions (needs Deno):
+   ```bash
+   deno check supabase/functions/admin-users/index.ts supabase/functions/auth-links/index.ts
+   ```
+3. Set the allowed browser origins (comma-separated). **Missing or empty = every browser request is
+   blocked (403).**
+   ```bash
+   supabase secrets set ALLOWED_ORIGINS=https://playbook.example.com,http://localhost:5173
+   ```
+4. Deploy:
+   ```bash
+   supabase functions deploy admin-users
+   supabase functions deploy auth-links --no-verify-jwt
+   ```
+   `verify_jwt` is set by these deploy flags only (there is no `supabase/config.toml`).
+
+### API keys
+
+- The functions read the **new Supabase API keys** first: `SUPABASE_PUBLISHABLE_KEYS` and
+  `SUPABASE_SECRET_KEYS` (JSON dictionaries `{"<name>": "<key>"}` provided by the platform). The key name
+  comes from the optional secrets `SUPABASE_PUBLISHABLE_KEY_NAME` / `SUPABASE_SECRET_KEY_NAME`
+  (default `default`).
+- Fallback: the legacy `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`.
+- `admin-users` needs both keys, `auth-links` needs the secret key, both need `SUPABASE_URL`. If a key is
+  missing, every request returns 500 `unknown` before any database or auth call, with the log line
+  `config_missing` (key values are never logged).
+- Never put the secret key in a `VITE_` variable or in the frontend.
+
+### JWT gateway
+
+With the new JWT signing keys, the platform `verify_jwt` check may need to be turned off for
+`admin-users` too (`supabase functions deploy admin-users --no-verify-jwt`). This stays safe: the handler
+requires a Bearer token, and every admin RPC runs with the caller's JWT, which the database validates
+(`auth.uid()`, active Admin check). Verify this at deploy time.
+
+### Checklist
+
+- [ ] Migrations 10, 11, 12 applied; the three SQL test files pass.
+- [ ] `ALLOWED_ORIGINS` set to the app origin(s).
+- [ ] Both functions deployed with the right `verify_jwt` setting.
+- [ ] **Supabase Auth → public sign-ups disabled.** The app has no sign-up screen; this protects the
+      activation path that reuses an auth account without a profile.
+- [ ] **Supabase Auth password policy must not be stricter than the app rule** (minimum 8 characters,
+      no required character classes), and **leaked password protection should be off**; otherwise a weak
+      password can use up a reset link. (`auth-links` maps a Supabase "weak password" error to 400
+      `invalid_input`; for a new user no link is used, but in the password reset path and when an auth
+      account without a profile is reused, the link is already used.)
+- [ ] Manual check: invite → copy link → activate → sign in; disable → sign-in blocked; enable → allowed.
+
+### Rollback
+
+- Functions: redeploy the previous version of the function, or `supabase functions delete <name>` to
+  remove it. Data is not affected.
+- Migrations are not rolled back automatically. To undo them, write a new migration reviewed by the team
+  lead; never drop tables with user history.
