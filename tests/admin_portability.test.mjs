@@ -68,3 +68,24 @@ test('admin rules import only types from the admin service', () => {
   assert.ok(!/\bimport\s*\(\s*['"]\.\/adminUserService/.test(source), 'no dynamic import of ./adminUserService');
   assert.ok(!/\bexport\s+[^;]*from\s*['"]\.\/adminUserService/.test(source), 'no re-export from ./adminUserService');
 });
+
+test('among the admin files only src/services/admin/ imports Supabase', () => {
+  const adminDir = join(srcDir, 'services', 'admin');
+  const adminFiles = getAllFiles(adminDir);
+  assert.ok(adminFiles.length > 0, 'src/services/admin/ has the adapter');
+  for (const file of [servicePath, rulesPath, ...adminFiles]) {
+    const usesSupabase = importSpecifiers(readFileSync(file, 'utf8')).some(isSupabaseSpec);
+    if (!file.startsWith(adminDir)) {
+      assert.ok(!usesSupabase, `${file} must not import Supabase`);
+    }
+  }
+});
+
+test('the Supabase admin adapter only invokes Edge Functions and keeps no secrets', () => {
+  const source = readFileSync(join(srcDir, 'services', 'admin', 'supabaseAdminUserAdapter.ts'), 'utf8');
+  assert.match(source, /functions\.invoke\(/);
+  for (const forbidden of [/\.from\(/, /\.rpc\(/, /auth\.admin/, /\.storage\b/, /localStorage/, /sessionStorage/, /\bconsole\./,
+    /SERVICE_ROLE/i, /SECRET/i, /VITE_/]) {
+    assert.ok(!forbidden.test(source), `adapter must not contain ${forbidden}`);
+  }
+});

@@ -147,6 +147,19 @@ test('CORS: allowed origin echoed, others and unconfigured lists rejected, never
   assert.deepEqual(env.parseAllowedOriginsEnv(' https://a.test/ , http://localhost:5173 ,'), ['https://a.test', 'http://localhost:5173']);
 });
 
+test('CORS allows every header the installed Supabase SDK can send (+ x-region)', async () => {
+  // corsHeaders is the only export of the SDK cors module; its Allow-Headers value is SUPABASE_HEADERS.
+  const { corsHeaders } = await import('@supabase/supabase-js/cors');
+  const sdkHeaders = corsHeaders['Access-Control-Allow-Headers'].split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+  assert.ok(sdkHeaders.includes('authorization'));
+  const request = new Request('https://x.test/functions/v1/admin-users/users', { method: 'OPTIONS', headers: { Origin: 'https://app.example.test' } });
+  const allowed = http.evaluateCors(request, ['https://app.example.test']).headers['Access-Control-Allow-Headers']
+    .split(',').map(h => h.trim().toLowerCase());
+  for (const header of [...sdkHeaders, 'x-region']) {
+    assert.ok(allowed.includes(header), `CORS must allow the "${header}" header`);
+  }
+});
+
 test('routing helpers: function prefix, 404, 405 with Allow', () => {
   assert.equal(http.routePath(new URL('https://x.test/functions/v1/admin-users/users/'), 'admin-users'), '/users');
   assert.equal(http.routePath(new URL('https://x.test/admin-users/invitations/abc/resend'), 'admin-users'), '/invitations/abc/resend');

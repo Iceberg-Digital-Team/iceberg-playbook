@@ -2,7 +2,9 @@
 import { ApiError } from './errors.ts';
 import { safeLog } from './log.ts';
 
-const ALLOWED_HEADERS = 'authorization, apikey, content-type, x-client-info';
+// Every header the Supabase SDK may send (canonical list of @supabase/supabase-js/cors) + x-region
+// (functions-js, non-default region). tests/edge_shared.test.mjs keeps it in sync with the SDK.
+const ALLOWED_HEADERS = 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage, x-region';
 const ALLOWED_METHODS = 'GET, POST, PATCH, DELETE, OPTIONS';
 export const MAX_BODY_BYTES = 16 * 1024;
 

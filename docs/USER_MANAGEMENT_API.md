@@ -309,7 +309,10 @@ never send to the server, so it stays out of server logs too.
   for anything unexpected (generic message). Logs contain only the event, the database function name and
   the SQLSTATE — never tokens, hashes, passwords, emails, keys or request bodies.
 - **CORS**: env `ALLOWED_ORIGINS` (comma-separated origins). A request with an allowed `Origin` gets that
-  origin echoed in `Access-Control-Allow-Origin` (+ `Vary: Origin`). Never `*`, never
+  origin echoed in `Access-Control-Allow-Origin` (+ `Vary: Origin`). Allowed headers: every header the
+  Supabase SDK can send (`authorization, x-client-info, apikey, content-type, x-retry-count, traceparent,
+  tracestate, baggage`, the list of `@supabase/supabase-js/cors`) plus `x-region`; a test fails if a new
+  SDK version adds a header that is not allowed. Never `*`, never
   `Access-Control-Allow-Credentials` (Bearer header, no cookies). A request with any other `Origin` → 403
   `forbidden`. **`ALLOWED_ORIGINS` missing or empty → fail closed**: every request with an `Origin` gets
   403 and a log line `cors_not_configured`. Requests without `Origin` (server to server) are processed.
@@ -353,7 +356,31 @@ never send to the server, so it stays out of server logs too.
 | `supabase/tests/user_management_tests.sql` | B (written) | 17 database tests in `BEGIN … ROLLBACK`. |
 | `supabase/migrations/12_auth_user_lookup.sql` | C (written) | `fn_find_auth_user_by_email(email)` → `(user_id, has_profile)`, server only, used during activation. Tests: `supabase/tests/auth_user_lookup_tests.sql`. |
 | `supabase/functions/admin-users`, `supabase/functions/auth-links` | C (written) | Edge Functions for §9 (URLs and behavior in §9). They hash tokens, call the database functions below, create / update auth users, and are the only place that uses the secret key and `auth.admin`. Business rules are enforced by the database; the password rule is mirrored in `supabase/functions/_shared/rules.ts` (a test keeps it identical to `adminUserRules.ts`). |
-| `src/services/admin/supabaseAdminUserAdapter.ts` | D (planned) | Implements `AdminUserAdapter` by calling the Edge Functions, maps responses to the domain models and errors to `AdminUserError` codes. Wired with `configureAdminUserService(adapter, { activationBaseUrl })`. |
+| `src/services/admin/supabaseAdminUserAdapter.ts` | D (written) | Implements `AdminUserAdapter` by calling only the two Edge Functions (details below). Wired once in `src/main.tsx`. |
+
+### Adapter (`src/services/admin/supabaseAdminUserAdapter.ts`)
+
+- `createSupabaseAdminUserAdapter(client = supabase)` returns the `AdminUserAdapter`;
+  `supabaseAdminUserAdapter` is the default instance. It uses only `client.auth.getSession()` and
+  `client.functions.invoke(...)` — never `from`, `rpc`, `auth.admin` or `storage`.
+- Calls: `invoke('<function>/<path>', { method, body })` with exactly the methods, paths and bodies of
+  §9 (e.g. `invoke('admin-users/users/<id>/disable', { method: 'POST' })`,
+  `invoke('auth-links/invitations/lookup', { method: 'POST', body: { token } })`). Ids are URL-encoded;
+  the token is only ever in a POST body.
+- Session: supabase-js attaches `Authorization: Bearer <session JWT>` to `functions.invoke` when a user is
+  signed in. Before every `admin-users` call the adapter checks `auth.getSession()`; no session →
+  `AdminUserError('unauthenticated')` without a network call. `auth-links` calls need no session.
+- Error mapping: HTTP error with body `{ error: { code, message, suggestion } }` → same code (only contract
+  codes; others → `unknown`), the message (empty → contract default) and the suggestion (only valid
+  shapes; others → `null`). Other HTTP error bodies → `unauthenticated` for 401 (e.g. gateway "Invalid
+  JWT"), else `unknown`. Network failure → `network`. Relay error or unreadable response → `unknown`.
+- Responses are checked with small guards (roles, statuses, purposes, delivery, strings); a wrong shape →
+  `unknown`. Only contract fields are returned. The `IssuedLink.token` goes to the service, which builds
+  `activationUrl`; the adapter never logs or stores anything.
+- Wiring (`src/main.tsx`): `configureAdminUserService(supabaseAdminUserAdapter, { activationBaseUrl:
+  window.location.origin + window.location.pathname })`. Links point to the address the app is opened
+  from: links created in local development point to `localhost` and are only for testing; create real
+  links from the deployed app.
 
 ### Database functions
 
@@ -438,8 +465,9 @@ Same approach as `INFRASTRUCTURE_MIGRATION.md` §5–§8:
 
 1. **Replace only the adapter.** Create e.g. `src/services/admin/icebergAdminUserAdapter.ts`
    implementing `AdminUserAdapter` with HTTP calls to the endpoints in §9, and pass it to
-   `configureAdminUserService`. `adminUserService.ts`, `adminUserRules.ts`, the pages and the router stay
-   unchanged.
+   `configureAdminUserService` in `src/main.tsx` instead of `supabaseAdminUserAdapter` (one line).
+   `adminUserService.ts`, `adminUserRules.ts`, the pages and the router stay unchanged. The Supabase
+   adapter is the only frontend file that knows Edge Function names and paths.
 2. **Move business rules to the backend.** The Iceberg API must enforce: effective invitation status,
    the allowed-actions table, self-action and last-Admin protection, expiry limits (max 7 days),
    invite validation and conflicts, password rules, single-use hashed tokens, revoking older reset links,
@@ -522,6 +550,8 @@ Open:
   policy aligned (§14 checklist).
 - Who deploys migrations and Edge Functions (§14). The migrations and SQL tests have not been run
   against a database yet.
+- The frontend adapter (task D) is tested only with fakes; it has not been run against deployed Edge
+  Functions yet.
 
 ---
 
