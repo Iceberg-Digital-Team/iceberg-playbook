@@ -642,7 +642,7 @@ never Supabase and never `src/services/admin/*`. Decision logic lives in pure, t
 ### `#/admin/users`
 
 - Header **Invite user**; table Name / Email / Role / Status / Expires / Actions. Status is a text badge
-  (Active, Disabled, Pending Invite, Invite Expired) with a border style, not color only. Under 768 px
+  (Active, Disabled, Pending Invite, Invite Expired) with a border style, not color only. Up to 1100 px
   each row becomes a card with the column names shown. Loading, empty and error (with **Try again**)
   states.
 - Row actions come from `getRowActions` (§5). Blocked actions are shown disabled with the reason
