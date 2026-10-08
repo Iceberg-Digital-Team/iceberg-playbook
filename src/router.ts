@@ -100,7 +100,9 @@ export function parseHash(hash: string): RouteState {
     '/create/guide',
     '/create/sop',
     '/create/playbook',
-    '/settings'
+    '/settings',
+    '/admin/users',
+    '/activate'
   ];
 
   if (exactPaths.includes(path)) {

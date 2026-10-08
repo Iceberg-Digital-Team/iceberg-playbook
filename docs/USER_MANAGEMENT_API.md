@@ -620,3 +620,54 @@ requires a Bearer token, and every admin RPC runs with the caller's JWT, which t
   remove it. Data is not affected.
 - Migrations are not rolled back automatically. To undo them, write a new migration reviewed by the team
   lead; never drop tables with user history.
+
+---
+
+## 15. User interface (task E)
+
+The UI uses only `adminUserService.ts`, `adminUserRules.ts`, `src/auth/*` and existing UI components —
+never Supabase and never `src/services/admin/*`. Decision logic lives in pure, tested files:
+`src/appAccess.ts`, `src/pages/adminUsersView.ts`, `src/pages/activateAccountState.ts`.
+
+### Navigation
+
+- Routes (`src/router.ts`): `#/admin/users` and `#/activate?token=…` (`params.token`).
+- `decideEntry(path, signedIn)` (`src/appAccess.ts`): `#/activate` renders for signed-in and signed-out
+  users (outside the workspace shell, in `AuthLayout`); other pages need a session; signed-in users leave
+  `#/login` / `#/forgot-password`.
+- Sidebar: a **Users** link (`Users` icon) only when `profile.role === 'Admin'`. A non-Admin who opens
+  `#/admin/users` sees "You do not have access to this page." and no service call is made. This is UX
+  only; the server checks every operation.
+
+### `#/admin/users`
+
+- Header **Invite user**; table Name / Email / Role / Status / Expires / Actions. Status is a text badge
+  (Active, Disabled, Pending Invite, Invite Expired) with a border style, not color only. Under 768 px
+  each row becomes a card with the column names shown. Loading, empty and error (with **Try again**)
+  states.
+- Row actions come from `getRowActions` (§5). Blocked actions are shown disabled with the reason
+  ("You cannot disable your own account.", "You cannot change your own role.", "This is the last active
+  Admin.").
+- Dialogs are native `<dialog className="guide-restore-dialog">` (`showModal()`, Esc = cancel, focus
+  returns to the opener): Invite user, Resend invitation / Create password link (expiry choice), Change
+  role (extra warning when Admin is involved), confirmation for Disable and Revoke. Enable runs directly.
+- Expiry choice: 24 hours (default), 3 days, 7 days, pick a date (`customDateBounds`, end of that local
+  day).
+- Link result: the link once, read-only field + **Copy link** ("Copied." / fallback: select and copy),
+  validity date, "This link is shown only once. Send it to the user yourself." (`delivery: 'email'` →
+  "Sent by email to …"). The link exists only in component state.
+- Errors: `AdminUserError.message` in `knowledge-error`; suggestions become buttons ("Create password
+  link instead", "Enable user", "Resend invitation") that start that flow.
+- After every successful action the list is loaded again from the server.
+- Dates use the fixed English format of Guide dates (`formatGuideDate`).
+
+### `#/activate?token=…`
+
+States: no token → "This link is not valid." (no network call); loading; dead link (`token_*`) →
+message + "Ask your Admin for a new link."; other error → message + **Try again**; form; done.
+The form shows email, name and role, and asks for a new password + confirmation
+(`autocomplete="new-password"`, show/hide, at least 8 characters). Both password fields are cleared when
+the form is sent. Success: "Your password is set. Sign in with your email and new password." +
+**Go to Sign In**. A signed-in visitor sees "You are signed in as …" and the page works normally.
+
+The forgot-password page now says "Ask your Admin for a password link."
