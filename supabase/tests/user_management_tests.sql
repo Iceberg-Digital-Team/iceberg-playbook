@@ -1,10 +1,11 @@
 -- ==============================================================================
 -- ICEBERG PLAYBOOK SUPABASE V2 TEST SUITE
 -- File: supabase/tests/user_management_tests.sql
--- Covers: migrations 10_user_management.sql and 11_user_invitation_security.sql
+-- Covers: migrations 11_user_management.sql and 12_user_invitation_security.sql
 -- Isolation Guarantee: Wrapped in BEGIN ... ROLLBACK transaction block.
 --                     Leaves ZERO test records behind in the database.
--- Run as the database owner (Supabase SQL Editor or psql), after migrations 10 and 11.
+-- Run as the database owner (Supabase SQL Editor or psql), after migrations 01-12
+-- (10 = the team lead's 10_restore_playbook.sql; 11 and 12 are User Management).
 -- Test rows use names starting with 'TEST - ' and emails at example.test.
 -- Supabase-specific parts are marked [SUPABASE]: auth.users rows, request.jwt.claims,
 -- and SET ROLE authenticated.
@@ -72,6 +73,14 @@ DECLARE
     v_text TEXT;
     v_role public.app_role;
     v_soon TIMESTAMPTZ := NOW() + INTERVAL '1 day';
+    v_claim UUID;
+    v_claim2 UUID;
+    v_claim3 UUID;
+    v_ins UUID := gen_random_uuid();
+    v_lease UUID := gen_random_uuid();
+    v_key TEXT;
+    v_row RECORD;
+    i INTEGER;
 BEGIN
     RAISE NOTICE '=== STARTING USER MANAGEMENT ISOLATED TEST SUITE ===';
 
@@ -248,19 +257,27 @@ BEGIN
     RAISE NOTICE 'Test 9 Passed: revoke works once, Revoked is final, expired cannot be revoked.';
 
     -- --------------------------------------------------------------------------
-    -- TEST 10: accept invitation (profile created in the same transaction, single use)
+    -- TEST 10: accept invitation (claim, then accept with the claim id; profile
+    -- created in the same transaction; single use)
     -- --------------------------------------------------------------------------
-    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_invitation(%L, %L)', pg_temp.um_hash('new-1'), v_support), 'invalid_input');
-    v_res := public.fn_accept_invitation(pg_temp.um_hash('new-1'), v_new);
+    v_res := public.fn_claim_activation_link(pg_temp.um_hash('new-1'));
+    v_claim := (v_res->>'claim_id')::UUID;
+    IF v_claim IS NULL OR v_res->>'purpose' <> 'invitation' OR v_res->>'email' <> 'test-um-new@example.test' THEN
+        RAISE EXCEPTION 'TEST 10 FAILED: claim returned unexpected data: %', v_res;
+    END IF;
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_invitation(%L, %L)', v_claim, v_support), 'invalid_input');
+    v_res := public.fn_accept_invitation(v_claim, v_new);
     IF v_res->>'email' <> 'test-um-new@example.test'
        OR NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = v_new AND full_name = 'TEST - New Person' AND role = 'Viewer' AND status = 'Active')
-       OR (SELECT status FROM public.user_invitations WHERE id = v_inv) <> 'Accepted' THEN
+       OR (SELECT status FROM public.user_invitations WHERE id = v_inv) <> 'Accepted'
+       OR (SELECT claim_id FROM public.user_invitations WHERE id = v_inv) IS NOT NULL THEN
         RAISE EXCEPTION 'TEST 10 FAILED: accept did not create the profile / mark the link: %', v_res;
     END IF;
-    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_invitation(%L, %L)', pg_temp.um_hash('new-1'), v_new), 'token_used');
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_claim_activation_link(%L)', pg_temp.um_hash('new-1')), 'token_used');
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_invitation(%L, %L)', v_claim, v_new), 'link_busy');
     PERFORM pg_temp.um_expect(format('SELECT public.fn_get_activation_link(%L)', pg_temp.um_hash('new-1')), 'token_used');
     v_pass := v_pass + 1;
-    RAISE NOTICE 'Test 10 Passed: accept creates the Active profile and marks the link Accepted; second use -> token_used.';
+    RAISE NOTICE 'Test 10 Passed: claim + accept creates the Active profile and marks the link Accepted; second use -> token_used.';
 
     -- --------------------------------------------------------------------------
     -- TEST 11: self actions
@@ -378,13 +395,18 @@ BEGIN
        OR (SELECT status FROM public.user_invitations WHERE id = v_reset2) <> 'Pending' THEN
         RAISE EXCEPTION 'TEST 15 FAILED: new reset link did not revoke the older one';
     END IF;
-    v_res := public.fn_accept_password_reset(pg_temp.um_hash('r-2'));
-    IF (v_res->>'user_id')::UUID <> v_support
+    v_res := public.fn_claim_activation_link(pg_temp.um_hash('r-2'));
+    v_claim := (v_res->>'claim_id')::UUID;
+    IF (v_res->>'user_id')::UUID <> v_support OR v_res->>'purpose' <> 'password_reset' THEN
+        RAISE EXCEPTION 'TEST 15 FAILED: claim password reset wrong: %', v_res;
+    END IF;
+    v_res := public.fn_accept_password_reset(v_claim);
+    IF v_res->>'purpose' <> 'password_reset' OR v_res ? 'user_id'
        OR (SELECT status FROM public.user_invitations WHERE id = v_reset2) <> 'Accepted' THEN
         RAISE EXCEPTION 'TEST 15 FAILED: accept password reset wrong: %', v_res;
     END IF;
-    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_password_reset(%L)', pg_temp.um_hash('r-2')), 'token_used');
-    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_password_reset(%L)', pg_temp.um_hash('r-1')), 'token_revoked');
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_claim_activation_link(%L)', pg_temp.um_hash('r-2')), 'token_used');
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_claim_activation_link(%L)', pg_temp.um_hash('r-1')), 'token_revoked');
     PERFORM pg_temp.um_expect(format('SELECT public.fn_admin_create_password_reset_link(%L, %L, %L)', v_disabled, v_soon, pg_temp.um_hash('r-3')), 'invalid_status');
     v_pass := v_pass + 1;
     RAISE NOTICE 'Test 15 Passed: new reset link revokes older ones; single use; not for disabled users.';
@@ -425,7 +447,179 @@ BEGIN
     v_pass := v_pass + 1;
     RAISE NOTICE 'Test 17 Passed: admin actions are audited; no token hash in audit_logs.';
 
-    RAISE NOTICE '=== ALL 17 USER MANAGEMENT TESTS PASSED (%/17) ===', v_pass;
+    -- --------------------------------------------------------------------------
+    -- TEST 18: no direct profile insert ([SUPABASE] SET ROLE authenticated);
+    -- activation still creates the profile
+    -- --------------------------------------------------------------------------
+    PERFORM pg_temp.um_as(NULL);
+    INSERT INTO auth.users (id, email, aud, role) VALUES -- [SUPABASE]
+        (v_ins, 'test-um-insert@example.test', 'authenticated', 'authenticated'),
+        (v_lease, 'test-um-lease@example.test', 'authenticated', 'authenticated');
+    PERFORM pg_temp.um_as(v_admin);
+    EXECUTE 'SET LOCAL ROLE authenticated';
+    BEGIN
+        INSERT INTO public.profiles (id, email, full_name, role, status)
+        VALUES (v_ins, 'test-um-insert@example.test', 'TEST - Direct Insert', 'Admin', 'Active');
+        v_text := 'no error';
+    EXCEPTION WHEN OTHERS THEN
+        GET STACKED DIAGNOSTICS v_text = RETURNED_SQLSTATE;
+    END;
+    EXECUTE 'RESET ROLE';
+    IF v_text <> '42501' THEN
+        RAISE EXCEPTION 'TEST 18 FAILED: direct profile insert by an Admin gave "%"', v_text;
+    END IF;
+    IF has_table_privilege('authenticated', 'public.profiles', 'INSERT') -- [SUPABASE] roles
+       OR has_table_privilege('anon', 'public.profiles', 'INSERT')
+       OR EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'profiles' AND policyname = 'profiles_insert_admin_only') THEN
+        RAISE EXCEPTION 'TEST 18 FAILED: a direct profile insert path still exists';
+    END IF;
+    v_res := public.fn_admin_create_invitation('test-um-insert@example.test', 'TEST - Invited Insert', 'Viewer', v_soon, pg_temp.um_hash('ins-1'));
+    v_claim := (public.fn_claim_activation_link(pg_temp.um_hash('ins-1'))->>'claim_id')::UUID;
+    PERFORM public.fn_accept_invitation(v_claim, v_ins);
+    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = v_ins AND role = 'Viewer' AND status = 'Active') THEN
+        RAISE EXCEPTION 'TEST 18 FAILED: activation did not create the profile';
+    END IF;
+    v_pass := v_pass + 1;
+    RAISE NOTICE 'Test 18 Passed: an Admin cannot insert a profile directly; the invitation flow still creates it.';
+
+    -- --------------------------------------------------------------------------
+    -- TEST 19: invitation lease (one holder, release, expiry, revoke / resend end it)
+    -- --------------------------------------------------------------------------
+    PERFORM pg_temp.um_as(v_admin);
+    v_res := public.fn_admin_create_invitation('test-um-lease@example.test', 'TEST - Lease', 'Support', v_soon, pg_temp.um_hash('lease-1'));
+    v_inv := (v_res->>'invitation_id')::UUID;
+    v_claim := (public.fn_claim_activation_link(pg_temp.um_hash('lease-1'))->>'claim_id')::UUID;
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_claim_activation_link(%L)', pg_temp.um_hash('lease-1')), 'link_busy');
+    IF public.fn_get_activation_link(pg_temp.um_hash('lease-1'))->>'status' <> 'Pending' THEN
+        RAISE EXCEPTION 'TEST 19 FAILED: a leased link is not shown as Pending';
+    END IF;
+    -- Release (e.g. the auth service rejected the password): the link stays Pending.
+    IF NOT public.fn_release_activation_link(v_claim) OR public.fn_release_activation_link(v_claim) THEN
+        RAISE EXCEPTION 'TEST 19 FAILED: release is not true once, then false';
+    END IF;
+    IF (SELECT status FROM public.user_invitations WHERE id = v_inv) <> 'Pending'
+       OR (SELECT claim_id FROM public.user_invitations WHERE id = v_inv) IS NOT NULL THEN
+        RAISE EXCEPTION 'TEST 19 FAILED: release did not keep the link Pending without a lease';
+    END IF;
+    v_claim2 := (public.fn_claim_activation_link(pg_temp.um_hash('lease-1'))->>'claim_id')::UUID;
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_invitation(%L, %L)', v_claim, v_lease), 'link_busy');
+    -- An expired lease can be claimed again; the old claim can no longer accept.
+    PERFORM pg_temp.um_as(NULL);
+    UPDATE public.user_invitations SET claimed_until = NOW() - INTERVAL '1 second' WHERE id = v_inv;
+    v_claim3 := (public.fn_claim_activation_link(pg_temp.um_hash('lease-1'))->>'claim_id')::UUID;
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_invitation(%L, %L)', v_claim2, v_lease), 'link_busy');
+    PERFORM public.fn_accept_invitation(v_claim3, v_lease);
+    IF (SELECT status FROM public.user_invitations WHERE id = v_inv) <> 'Accepted'
+       OR (SELECT claim_id FROM public.user_invitations WHERE id = v_inv) IS NOT NULL THEN
+        RAISE EXCEPTION 'TEST 19 FAILED: accept with the current claim did not finish the link';
+    END IF;
+    -- A lease on a direct (owner) update of an Accepted link is impossible.
+    PERFORM pg_temp.um_expect(format('UPDATE public.user_invitations SET claim_id = %L, claimed_until = NOW() WHERE id = %L',
+        gen_random_uuid(), v_inv), 'invalid_status');
+    -- Revoke and resend end an active lease.
+    PERFORM pg_temp.um_as(v_admin);
+    v_res := public.fn_admin_create_invitation('test-um-lease2@example.test', 'TEST - Lease 2', 'Viewer', v_soon, pg_temp.um_hash('lease-2'));
+    v_inv := (v_res->>'invitation_id')::UUID;
+    v_claim := (public.fn_claim_activation_link(pg_temp.um_hash('lease-2'))->>'claim_id')::UUID;
+    PERFORM public.fn_admin_resend_invitation(v_inv, v_soon, pg_temp.um_hash('lease-3'));
+    IF (SELECT claim_id FROM public.user_invitations WHERE id = v_inv) IS NOT NULL THEN
+        RAISE EXCEPTION 'TEST 19 FAILED: resend did not end the lease';
+    END IF;
+    v_claim := (public.fn_claim_activation_link(pg_temp.um_hash('lease-3'))->>'claim_id')::UUID;
+    PERFORM public.fn_admin_revoke_invitation(v_inv);
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_invitation(%L, %L)', v_claim, v_lease), 'link_busy');
+    v_pass := v_pass + 1;
+    RAISE NOTICE 'Test 19 Passed: one lease holder; release keeps the link; expired lease re-claimable; revoke / resend end the lease.';
+
+    -- --------------------------------------------------------------------------
+    -- TEST 20: password reset lease (release, newer link, disable during the lease)
+    -- --------------------------------------------------------------------------
+    PERFORM pg_temp.um_as(v_admin);
+    v_res := public.fn_admin_create_password_reset_link(v_mixed, v_soon, pg_temp.um_hash('rl-1'));
+    v_reset1 := (v_res->>'invitation_id')::UUID;
+    v_claim := (public.fn_claim_activation_link(pg_temp.um_hash('rl-1'))->>'claim_id')::UUID;
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_claim_activation_link(%L)', pg_temp.um_hash('rl-1')), 'link_busy');
+    PERFORM public.fn_release_activation_link(v_claim);
+    IF (SELECT status FROM public.user_invitations WHERE id = v_reset1) <> 'Pending' THEN
+        RAISE EXCEPTION 'TEST 20 FAILED: released reset link is not Pending';
+    END IF;
+    v_claim2 := (public.fn_claim_activation_link(pg_temp.um_hash('rl-1'))->>'claim_id')::UUID;
+    -- A newer reset link revokes the leased older one.
+    PERFORM public.fn_admin_create_password_reset_link(v_mixed, v_soon, pg_temp.um_hash('rl-2'));
+    IF (SELECT status FROM public.user_invitations WHERE id = v_reset1) <> 'Revoked'
+       OR (SELECT claim_id FROM public.user_invitations WHERE id = v_reset1) IS NOT NULL THEN
+        RAISE EXCEPTION 'TEST 20 FAILED: newer reset link did not revoke the leased one';
+    END IF;
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_password_reset(%L)', v_claim2), 'link_busy');
+    -- Disabling the user during the lease ends it.
+    v_claim := (public.fn_claim_activation_link(pg_temp.um_hash('rl-2'))->>'claim_id')::UUID;
+    PERFORM public.fn_admin_disable_user(v_mixed);
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_accept_password_reset(%L)', v_claim), 'link_busy');
+    PERFORM pg_temp.um_expect(format('SELECT public.fn_claim_activation_link(%L)', pg_temp.um_hash('rl-2')), 'token_revoked');
+    PERFORM public.fn_admin_enable_user(v_mixed);
+    v_pass := v_pass + 1;
+    RAISE NOTICE 'Test 20 Passed: reset lease is released cleanly; a newer link or disabling the user ends it.';
+
+    -- --------------------------------------------------------------------------
+    -- TEST 21: rate limit counter (limit, window, input checks, cleanup, privileges)
+    -- --------------------------------------------------------------------------
+    PERFORM pg_temp.um_as(NULL);
+    v_key := pg_temp.um_hash('rate-key-1');
+    FOR i IN 1..3 LOOP
+        SELECT * INTO v_row FROM public.fn_rate_limit_hit(v_key, 3, 600);
+        IF NOT v_row.allowed THEN
+            RAISE EXCEPTION 'TEST 21 FAILED: hit % of 3 was not allowed', i;
+        END IF;
+    END LOOP;
+    SELECT * INTO v_row FROM public.fn_rate_limit_hit(v_key, 3, 600);
+    IF v_row.allowed OR v_row.retry_after_seconds < 1 OR v_row.retry_after_seconds > 600 THEN
+        RAISE EXCEPTION 'TEST 21 FAILED: hit 4 of 3 allowed or wrong retry_after: %', v_row;
+    END IF;
+    UPDATE public.auth_link_rate_limits SET window_started_at = NOW() - INTERVAL '601 seconds' WHERE key_hash = v_key;
+    SELECT * INTO v_row FROM public.fn_rate_limit_hit(v_key, 3, 600);
+    IF NOT v_row.allowed OR (SELECT hits FROM public.auth_link_rate_limits WHERE key_hash = v_key) <> 1 THEN
+        RAISE EXCEPTION 'TEST 21 FAILED: a new window did not reset the counter';
+    END IF;
+    PERFORM pg_temp.um_expect('SELECT * FROM public.fn_rate_limit_hit(''not-a-hash'', 3, 600)', 'invalid_input');
+    PERFORM pg_temp.um_expect(format('SELECT * FROM public.fn_rate_limit_hit(%L, 0, 600)', v_key), 'invalid_input');
+    PERFORM pg_temp.um_expect(format('SELECT * FROM public.fn_rate_limit_hit(%L, 3, 0)', v_key), 'invalid_input');
+    PERFORM pg_temp.um_expect(format('INSERT INTO public.auth_link_rate_limits (key_hash, window_started_at, hits) VALUES (%L, NOW(), 1)',
+        '203.0.113.7'), '23514');
+    INSERT INTO public.auth_link_rate_limits (key_hash, window_started_at, hits)
+    VALUES (pg_temp.um_hash('rate-old'), NOW() - INTERVAL '2 days', 5);
+    PERFORM * FROM public.fn_rate_limit_hit(pg_temp.um_hash('rate-key-2'), 3, 600);
+    IF EXISTS (SELECT 1 FROM public.auth_link_rate_limits WHERE key_hash = pg_temp.um_hash('rate-old')) THEN
+        RAISE EXCEPTION 'TEST 21 FAILED: a counter row older than 1 day was not cleaned up';
+    END IF;
+    IF has_table_privilege('anon', 'public.auth_link_rate_limits', 'SELECT') -- [SUPABASE] roles
+       OR has_table_privilege('authenticated', 'public.auth_link_rate_limits', 'SELECT')
+       OR has_table_privilege('service_role', 'public.auth_link_rate_limits', 'SELECT')
+       OR has_function_privilege('anon', 'public.fn_rate_limit_hit(text, integer, integer)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.fn_rate_limit_hit(text, integer, integer)', 'EXECUTE')
+       OR NOT has_function_privilege('service_role', 'public.fn_rate_limit_hit(text, integer, integer)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.fn_claim_activation_link(text)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.fn_release_activation_link(uuid)', 'EXECUTE')
+       OR NOT has_function_privilege('service_role', 'public.fn_claim_activation_link(text)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'TEST 21 FAILED: wrong privileges on the rate limit / lease objects';
+    END IF;
+    v_pass := v_pass + 1;
+    RAISE NOTICE 'Test 21 Passed: rate limit counts per window, rejects bad input, cleans old rows; server only.';
+
+    -- --------------------------------------------------------------------------
+    -- TEST 22: caller check for the admin-users Edge Function
+    -- --------------------------------------------------------------------------
+    PERFORM pg_temp.um_as(v_admin);
+    IF (public.fn_admin_current_caller()->>'user_id')::UUID <> v_admin THEN
+        RAISE EXCEPTION 'TEST 22 FAILED: active Admin not returned';
+    END IF;
+    PERFORM pg_temp.um_as(v_support);
+    PERFORM pg_temp.um_expect('SELECT public.fn_admin_current_caller()', 'forbidden');
+    PERFORM pg_temp.um_as(NULL);
+    PERFORM pg_temp.um_expect('SELECT public.fn_admin_current_caller()', 'unauthenticated');
+    v_pass := v_pass + 1;
+    RAISE NOTICE 'Test 22 Passed: fn_admin_current_caller returns an active Admin; others forbidden / unauthenticated.';
+
+    RAISE NOTICE '=== ALL 22 USER MANAGEMENT TESTS PASSED (%/22) ===', v_pass;
 END $$;
 
 -- Complete automatic rollback: leaves zero test artifacts in database

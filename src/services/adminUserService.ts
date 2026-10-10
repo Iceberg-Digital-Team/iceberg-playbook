@@ -109,6 +109,8 @@ export type AdminUserErrorCode =
   | 'token_expired'
   | 'token_used'
   | 'token_revoked'
+  | 'rate_limited'
+  | 'link_busy'
   | 'not_configured'
   | 'network'
   | 'unknown';
@@ -132,6 +134,8 @@ export const ADMIN_ERROR_MESSAGES: Record<AdminUserErrorCode, string> = {
   token_expired: 'This link has expired. Ask your Admin for a new link.',
   token_used: 'This link has already been used. Ask your Admin for a new link if needed.',
   token_revoked: 'This link has been revoked. Ask your Admin for a new link.',
+  rate_limited: 'Too many attempts. Please wait a few minutes and try again.',
+  link_busy: 'This link is being used right now. Please try again in a moment.',
   not_configured: 'User management is not configured.',
   network: 'Could not reach the server. Check your connection and try again.',
   unknown: 'Something went wrong. Please try again.',

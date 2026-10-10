@@ -1,10 +1,11 @@
 -- ==============================================================================
 -- ICEBERG PLAYBOOK SUPABASE V2 TEST SUITE
 -- File: supabase/tests/auth_user_lookup_tests.sql
--- Covers: migration 12_auth_user_lookup.sql (fn_find_auth_user_by_email)
+-- Covers: migration 13_auth_user_lookup.sql (fn_find_auth_user_by_email)
 -- Isolation Guarantee: Wrapped in BEGIN ... ROLLBACK transaction block.
 --                     Leaves ZERO test records behind in the database.
--- Run as the database owner (Supabase SQL Editor or psql), after migrations 10, 11 and 12.
+-- Run as the database owner (Supabase SQL Editor or psql), after migrations 01-13
+-- (10 = the team lead's 10_restore_playbook.sql; 11, 12 and 13 are User Management).
 -- Test rows use names starting with 'TEST - ' and emails at example.test.
 -- Supabase-specific parts are marked [SUPABASE]: auth.users rows and the API roles.
 -- ==============================================================================

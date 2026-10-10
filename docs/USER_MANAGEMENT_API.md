@@ -80,6 +80,7 @@ returned once, when it is created (`CreatedLink`, §6), and can never be read ag
 | `token_hash` | Lower-case hex SHA-256 of the token (64 chars), unique. Never a plaintext token. |
 | `issued_at` | When the current token was issued; changes on resend. The 7-day window is measured from here. |
 | `updated_at` | Last change of the row. |
+| `claim_id`, `claimed_until` | Activation lease (§11): set for 60 seconds while one request sets the password; only on a `Pending` link; never returned by any API. |
 
 - **Stored vs effective status:** the database stores only `Pending`, `Accepted`, `Revoked`.
   `Expired` is never stored; a stored `Pending` row with `expires_at <= now` is `Expired`
@@ -196,6 +197,8 @@ Adapters map backend errors to these codes.
 | `token_expired` | This link has expired. Ask your Admin for a new link. | Effective status `Expired`. |
 | `token_used` | This link has already been used. … | Status `Accepted`. |
 | `token_revoked` | This link has been revoked. Ask your Admin for a new link. | Status `Revoked`. |
+| `rate_limited` | Too many attempts. Please wait a few minutes and try again. | Lookup / activate over the rate limit (§9). |
+| `link_busy` | This link is being used right now. Please try again in a moment. | Another activation request holds the link lease (§11). |
 | `not_configured` | User management is not configured. | No adapter or base URL configured. |
 | `network` | Could not reach the server. … | Transport failure. |
 | `unknown` | Something went wrong. Please try again. | Anything else. |
@@ -235,11 +238,14 @@ Suggestions (`AdminSuggestion`), used with `email_in_use` / `invitation_exists`:
 2. The page calls `getInvitation(token)`. The backend resolves email, name, role, purpose, status and
    expiry **from the token only**. Only a usable link returns data; an expired, used, revoked or unknown
    link returns `token_expired`, `token_used`, `token_revoked` or `token_invalid`, with no personal data.
-3. The user enters a password and its confirmation. Rules: at least **8 characters**, at most
+3. The user enters a password and its confirmation. Rules: at least **8 characters** (minimum), at most
    **72 bytes** in UTF-8 (bcrypt limit), not only spaces, not trimmed, confirmation must match exactly.
+   The identity provider may add its own checks (in Supabase: leaked-password protection, which stays
+   **on**). A password it rejects returns `invalid_input` and the link **stays usable**: the user simply
+   chooses another password.
 4. The page calls `activateAccount({ token, password })`. The backend checks the token again,
    sets the password, marks the link `Accepted` (single use) and, for an invitation, creates the active
-   user with the invited name and role.
+   user with the invited name and role. A link is used up only when the password was accepted.
 5. On success the page clears the password from state and goes to `#/login`. There is **no automatic
    sign-in**; the user signs in with the new password.
 
@@ -259,8 +265,9 @@ Suggestions (`AdminSuggestion`), used with `email_in_use` / `invitation_exists`:
 All admin endpoints require a valid session of an **active Admin**, checked on the server for every
 call. All bodies are JSON. Errors return `{ "error": { "code": "<AdminUserErrorCode>", "message": "…", "suggestion": { … } | null } }`
 with a matching HTTP status (400 `invalid_input`, 401 `unauthenticated`, 403 `forbidden`,
-404 `not_found`, 409 `email_in_use` / `invitation_exists` / `invalid_status` / `last_admin` / `self_action`,
-410 `token_expired` / `token_used` / `token_revoked`, 400 `token_invalid`).
+404 `not_found`, 409 `email_in_use` / `invitation_exists` / `invalid_status` / `last_admin` / `self_action` /
+`link_busy`, 410 `token_expired` / `token_used` / `token_revoked`, 400 `token_invalid`, 429 `rate_limited`
+with a `Retry-After` header in seconds).
 
 | Method & path | Caller | Request | Response | Errors |
 | :--- | :--- | :--- | :--- | :--- |
@@ -272,8 +279,8 @@ with a matching HTTP status (400 `invalid_input`, 401 `unauthenticated`, 403 `fo
 | `POST /api/admin/users/:id/disable` | Admin | – | `AdminUser` | `not_found`, `invalid_status`, `self_action`, `last_admin`, `forbidden` |
 | `POST /api/admin/users/:id/enable` | Admin | – | `AdminUser` | `not_found`, `invalid_status`, `forbidden` |
 | `POST /api/admin/users/:id/password-links` | Admin | `{ expiresAt }` | `IssuedLink` | `not_found`, `invalid_status`, `invalid_input`, `forbidden` |
-| `POST /api/auth/invitations/lookup` | Anyone with the token | `{ token }` | `ActivationLinkInfo` | `token_invalid`, `token_expired`, `token_used`, `token_revoked` |
-| `POST /api/auth/activate` | Anyone with the token | `{ token, password }` | `ActivationResult` | `token_*`, `invalid_input` |
+| `POST /api/auth/invitations/lookup` | Anyone with the token | `{ token }` | `ActivationLinkInfo` | `token_invalid`, `token_expired`, `token_used`, `token_revoked`, `rate_limited` |
+| `POST /api/auth/activate` | Anyone with the token | `{ token, password }` | `ActivationResult` | `token_*`, `invalid_input`, `email_in_use`, `link_busy`, `rate_limited` |
 
 `IssuedLink` = `{ invitationId, purpose, email, expiresAt, delivery, token }`. The raw `token` appears
 **only** in this creation response (and is `null` when `delivery` is `'email'`). The frontend service turns
@@ -291,13 +298,37 @@ never send to the server, so it stays out of server logs too.
 | `/api/admin/<rest>` | `https://<project>.supabase.co/functions/v1/admin-users/<rest>` |
 | `/api/auth/<rest>` | `https://<project>.supabase.co/functions/v1/auth-links/<rest>` |
 
-- **`admin-users`** — requires `Authorization: Bearer <user access token>` (missing / malformed → 401
-  `unauthenticated` before any database call). The header is forwarded to the database with the
-  publishable key, so every `fn_admin_*` function checks `auth.uid()` itself. No user id is taken from
-  the body. Success statuses: `201` for created links (`POST /invitations`, `POST /users/:id/password-links`),
-  `204` for revoke, `200` otherwise.
-- **`auth-links`** — public (deployed with `--no-verify-jwt`), authorized only by the link token. Uses
-  the secret key for the server-only database functions and Supabase Auth admin calls.
+- **`admin-users`** — requires `Authorization: Bearer <user access token>`. Before **any** admin RPC the
+  function verifies the caller itself (safe with or without the platform `verify_jwt` check):
+  1. missing / malformed header → 401 `unauthenticated` (no further call);
+  2. `auth.getUser(jwt)` with the secret key: the Auth server checks the signature (legacy and new
+     signing keys), the expiry, that the user exists and that the session was not signed out. Rejected →
+     401 `unauthenticated`; Auth server unreachable → 500 `unknown`;
+  3. `fn_admin_current_caller()` with the caller's JWT returns the caller's id only for an **active
+     Admin**: not an active Admin → 403 `forbidden`; an id that differs from step 2 → 401.
+  Then the header is forwarded to the database with the publishable key, so every `fn_admin_*` function
+  checks `auth.uid()` again (second lock). No user id is taken from the body. Success statuses: `201` for
+  created links (`POST /invitations`, `POST /users/:id/password-links`), `204` for revoke, `200` otherwise.
+- **`auth-links`** — public (deployed with `--no-verify-jwt`), authorized only by the link token, and it
+  protects itself: token format check (no database call for a wrong format), rate limits (below), and
+  expiry / single use / revocation in the database functions (§11). Uses the secret key for the
+  server-only database functions and Supabase Auth admin calls.
+- **Rate limits (`auth-links`)**, counted in the database (`fn_rate_limit_hit`, migration 12) because
+  Edge Function instances share no memory. Fixed windows:
+  - lookup: at most **20 requests per client IP per 10 minutes**;
+  - activate: at most **10 requests per client IP per 10 minutes**;
+  - per token: at most **10 requests per hour** (lookup and activate counted together).
+  Over a limit → 429 `rate_limited` + `Retry-After`, no other work, log line `rate_limited step=<kind>`.
+  If the counter cannot be reached → 500 `unknown` (fails closed). A malformed request (bad token format,
+  password that breaks §8) is rejected before the counter. Keys are `HMAC-SHA-256(secret key,
+  "<kind>:<value>")`; no raw IP address and no token hash is stored. Counter rows older than 1 day are
+  deleted by the same function (at most 100 rows per call); they are not user data. A burst of up to twice
+  a limit is possible across a window boundary.
+- **Client IP** for the rate limit: `cf-connecting-ip` (set by Cloudflare in front of Supabase; a value sent
+  by the client is rejected), otherwise the **right-most** `X-Forwarded-For` entry (added by the platform
+  proxy). The left-most `X-Forwarded-For` value is never used because a client can forge it. Without both
+  headers all requests share one bucket (log `client_ip_missing`). This header behavior is not documented
+  by Supabase: confirm it at deploy time (§14 checklist).
 - **Tokens**: 32 random bytes (Web Crypto), base64url in the link (43 characters). Only the lower-case hex
   SHA-256 is sent to SQL. An incoming token is trimmed; a wrong format → 400 `token_invalid` without a
   database call.
@@ -339,22 +370,26 @@ never send to the server, so it stays out of server logs too.
   `#/activate?token=`), console output, logs, error messages, or plaintext in the database. The UI
   clears the password from state after submit.
 - **Privileged keys** (e.g. Supabase `service_role`) live only in server-side code.
-- **Rate limiting** (recommended): limit lookup and activate calls per IP and per token.
+- **Rate limiting** (required): limit lookup and activate calls per client IP and per token, inside the
+  endpoint (reference implementation: §9).
+- **Rejected passwords never use up a link**: the link is single use only for an accepted password
+  (reference implementation: the activation lease in §11).
 
 ---
 
 ## 11. Current Supabase reference implementation
 
-> Status: migrations 10, 11 and 12 and the Edge Functions are **written (tasks B, C) but not deployed**
-> (`Mode: PROPOSED`). The adapter (task D) is planned. Supabase-specific lines in the SQL are marked
-> `[SUPABASE]`. Deployment steps: §14.
+> Status: migrations 11, 12 and 13 and the Edge Functions are **written (tasks B, C, F) but not deployed**
+> (`Mode: PROPOSED`). Supabase-specific lines in the SQL are marked `[SUPABASE]`. Deployment steps: §14.
+> Migration **10 is the team lead's `10_restore_playbook.sql`** and must run before ours (task F renumbered
+> ours from 10–12 to 11–13).
 
 | Part | Task | Content |
 | :--- | :--- | :--- |
-| `supabase/migrations/10_user_management.sql` | B (written) | Data model: `profiles.status` (`Active` / `Disabled`, default `Active`, backfills existing rows), table `user_invitations` (§3), CHECK constraints, partial unique indexes (one open invitation per email, one open reset link per user), `fn_invitation_effective_status`. |
-| `supabase/migrations/11_user_invitation_security.sql` | B (written) | Security: RLS on `user_invitations` with no policies, privileges, triggers, the functions below, and the changes to existing behavior listed in §13. |
-| `supabase/tests/user_management_tests.sql` | B (written) | 17 database tests in `BEGIN … ROLLBACK`. |
-| `supabase/migrations/12_auth_user_lookup.sql` | C (written) | `fn_find_auth_user_by_email(email)` → `(user_id, has_profile)`, server only, used during activation. Tests: `supabase/tests/auth_user_lookup_tests.sql`. |
+| `supabase/migrations/11_user_management.sql` | B, F | Data model: `profiles.status` (`Active` / `Disabled`, default `Active`, backfills existing rows), table `user_invitations` (§3) with the activation lease columns `claim_id` / `claimed_until`, CHECK constraints, partial unique indexes (one open invitation per email, one open reset link per user, one link per lease id), `fn_invitation_effective_status`. |
+| `supabase/migrations/12_user_invitation_security.sql` | B, F | Security: RLS on `user_invitations` with no policies, privileges, triggers, the functions below, the rate limit table and function, and the changes to existing behavior listed in §13. |
+| `supabase/tests/user_management_tests.sql` | B, F | 22 database tests in `BEGIN … ROLLBACK`. |
+| `supabase/migrations/13_auth_user_lookup.sql` | C | `fn_find_auth_user_by_email(email)` → `(user_id, has_profile)`, server only, used during activation. Tests: `supabase/tests/auth_user_lookup_tests.sql`. |
 | `supabase/functions/admin-users`, `supabase/functions/auth-links` | C (written) | Edge Functions for §9 (URLs and behavior in §9). They hash tokens, call the database functions below, create / update auth users, and are the only place that uses the secret key and `auth.admin`. Business rules are enforced by the database; the password rule is mirrored in `supabase/functions/_shared/rules.ts` (a test keeps it identical to `adminUserRules.ts`). |
 | `src/services/admin/supabaseAdminUserAdapter.ts` | D (written) | Implements `AdminUserAdapter` by calling only the two Edge Functions (details below). Wired once in `src/main.tsx`. |
 
@@ -388,6 +423,7 @@ All are `SECURITY DEFINER` with `SET search_path = ''` and explicit `REVOKE` / `
 
 | Function | Contract operation | Caller |
 | :--- | :--- | :--- |
+| `fn_admin_current_caller()` | caller check of `admin-users` (returns `{ user_id }` of an active Admin) | Admin's own JWT |
 | `fn_admin_list_users()` | `listUsers` | Admin's own JWT (`authenticated`) |
 | `fn_admin_create_invitation(email, full_name, role, expires_at, token_hash)` | `inviteUser` | Admin's own JWT |
 | `fn_admin_resend_invitation(invitation_id, expires_at, token_hash)` | `resendInvitation` | Admin's own JWT |
@@ -397,9 +433,12 @@ All are `SECURITY DEFINER` with `SET search_path = ''` and explicit `REVOKE` / `
 | `fn_admin_enable_user(user_id)` | `enableUser` | Admin's own JWT |
 | `fn_admin_create_password_reset_link(user_id, expires_at, token_hash)` | `createPasswordResetLink` (revokes older open ones) | Admin's own JWT |
 | `fn_get_activation_link(token_hash)` | `getInvitation` | server only (`service_role`) |
-| `fn_accept_invitation(token_hash, auth_user_id)` | `activateAccount` (invitation) | server only |
-| `fn_accept_password_reset(token_hash)` | `activateAccount` (password reset) | server only |
-| `fn_find_auth_user_by_email(email)` (migration 12) | activation helper: `(user_id, has_profile)` | server only |
+| `fn_claim_activation_link(token_hash)` | `activateAccount` step 1: 60 second lease → `{ claim_id, purpose, email, user_id }` | server only |
+| `fn_release_activation_link(claim_id)` | `activateAccount` on failure: ends the lease, link stays `Pending` | server only |
+| `fn_accept_invitation(claim_id, auth_user_id)` | `activateAccount` (invitation) step 3 | server only |
+| `fn_accept_password_reset(claim_id)` | `activateAccount` (password reset) step 3 | server only |
+| `fn_find_auth_user_by_email(email)` (migration 13) | activation helper: `(user_id, has_profile)` | server only |
+| `fn_rate_limit_hit(key_hash, limit, window_seconds)` | rate limit counter for `auth-links` (§9) | server only |
 
 Every `fn_admin_*` function checks that `auth.uid()` is an **active Admin**. Every admin action writes
 `public.audit_logs` (`entity_type` `user` or `invitation`) without token, hash or password.
@@ -415,34 +454,56 @@ DETAIL = '<English text>', HINT = '<suggestion JSON>'`. The Edge Function maps `
 
 ### Activation order (`auth-links`, `POST /activate`)
 
-Before any database call: the token format and the password rules (§8) are checked.
+Before any database call: the token format and the password rules (§8) are checked. Then the rate limits
+(§9). Then the **activation lease** keeps the link single use without letting a rejected password use it up:
 
-**Invitation**
-1. Hash the token → `fn_get_activation_link` (dead link → `token_*`).
-2. `fn_find_auth_user_by_email(email)` (`lower(btrim(...))` on both sides):
-   - account **with** a profile → 409 `email_in_use`; its password is never changed;
-   - no account → `auth.admin.createUser({ email, password, email_confirm: true })`, then
-     `fn_accept_invitation(hash, new_id)`. If `createUser` reports that the email already exists (a
-     concurrent request), look up again and continue as below (or `email_in_use`);
-   - account **without** a profile (left over from an earlier failed try) →
-     `fn_accept_invitation(hash, id)` **first**, then `auth.admin.updateUserById(id, { password, email_confirm: true })`.
-3. `fn_accept_invitation` is one transaction: lock the link (`FOR UPDATE`), re-check it, check the auth
-   email matches, create the `Active` profile with the invited name and role, mark the link `Accepted`,
-   write audit. If it fails, nothing is saved and the link stays `Pending`; an auth user without a profile
-   cannot sign in and is reused on retry. Nothing is deleted (`auth.admin.deleteUser` is never used).
-4. **Concurrency:** the password of an existing auth user is changed only **after** this request's
-   `fn_accept_invitation` succeeded. Only one request can succeed (row lock); a second request with the
-   same token gets `token_used` before it touches any password. A new auth user gets its password only
-   from the request that created it. So the final password belongs to the request that reported success.
-5. If the password update fails after the accept → 500 `unknown`: "Your account was created, but the
-   password could not be saved. Ask your Admin for a password link."
+- `fn_claim_activation_link(hash)` locks the link (`FOR UPDATE`), checks it is usable (`token_*`
+  otherwise; a reset link of a non-Active user → `token_revoked`) and gives this request a **60 second
+  lease** (`claim_id`, `claimed_until`). While the lease is active, any other request gets 409
+  `link_busy` and **touches no password**.
+- Only the lease holder sets a password in Supabase Auth, then calls `fn_accept_*` with its `claim_id`
+  (a lost lease → `link_busy`). Accept clears the lease and marks the link `Accepted`.
+- **On any failure after the claim, the lease is released** (`fn_release_activation_link`) and the link
+  stays `Pending`, so the user can try again at once. If the release itself fails (logged
+  `release_failed`), the lease ends by itself after 60 seconds.
+- Revoke, resend, disabling the user and a newer reset link also end an active lease.
+
+**Invitation – new user**
+1. Claim (`token_*` / `link_busy` → stop).
+2. `fn_find_auth_user_by_email(email)` (`lower(btrim(...))` on both sides): account **with** a profile →
+   409 `email_in_use`, its password is never changed.
+3. No account → `auth.admin.createUser({ email, password, email_confirm: true })`.
+   - Weak / leaked password → 400 `invalid_input` "This password does not meet the password policy.
+     Choose a stronger password." The **link is not used**.
+   - "email already exists" → look up again → orphan path below (or `email_in_use`).
+   - Other error → 500 `unknown`.
+4. `fn_accept_invitation(claim_id, new_id)`: one transaction: re-check the link, check the auth email
+   matches, create the `Active` profile with the invited name and role, mark the link `Accepted`, write
+   audit. If it fails, nothing is saved; an auth user without a profile cannot use the app and is reused
+   on retry. Nothing is deleted (`auth.admin.deleteUser` is never used).
+
+**Invitation – orphan reuse** (auth account **without** a profile, left over from an earlier failed try)
+1. Claim. 2. `auth.admin.updateUserById(id, { password, email_confirm: true })`: weak → 400 (link not
+used); other failure → 500 "Your password could not be saved. Please try again." 3. `fn_accept_invitation(claim_id, id)`.
 
 **Password reset**
-1. Hash the token → `fn_get_activation_link`.
-2. `fn_accept_password_reset(hash)` first: the link is claimed in the database (single use).
-3. `auth.admin.updateUserById(user_id, { password })`. If this fails → 500 `unknown`: "Your link was
-   used, but the new password could not be saved. Ask your Admin for a new password link." `user_id` is
-   never returned to the browser.
+1. Claim (the user must be Active). 2. `auth.admin.updateUserById(user_id, { password })`: weak → 400
+(link not used); other failure → 500 "Your password could not be saved. Please try again."
+3. `fn_accept_password_reset(claim_id)`. If this fails after the password was saved (e.g. the user was
+disabled during the lease), the error is returned and logged (`accept_after_password_failed`); an
+unexpected failure says "Your new password may already work, but the link could not be closed. …".
+`user_id` and `claim_id` are never returned to the browser.
+
+**Concurrency:** only the lease holder touches a password for a link, so the final password belongs to
+the request that reported success.
+
+**Auth call timeout:** every Supabase Auth admin call (`createUser`, `updateUserById`) is aborted after
+**20 seconds** (`AUTH_CALL_TIMEOUT_MS`; the secret client's `fetch` uses `AbortSignal.timeout`, and the
+handler also stops waiting). This is well below the 60 second lease. On a timeout the lease is **kept, not
+released**, because the write may still land in Supabase Auth; it ends by itself after 60 seconds, so a
+late write has at least 40 seconds to land before anyone can claim the link again. Response: 500
+`unknown` "Your password could not be saved. Please wait a minute and try again." A retry within that
+minute gets `link_busy`; a later retry simply sets the password again. Log: `auth_call_timeout`.
 
 ### Disable / enable (`admin-users`)
 
@@ -455,7 +516,7 @@ Before any database call: the token format and the password rules (§8) are chec
    in the app, but sign-in could not be blocked. Contact the system owner." (or the enable variant).
    Never a silent success. Audit logs show both steps.
 4. Sessions: Supabase has no admin "sign out user X". An access token already issued stays valid until it
-   expires (default 1 hour), but migration 11 makes RLS deny a Disabled user everything.
+   expires (default 1 hour), but migration 12 makes RLS deny a Disabled user everything.
 
 ---
 
@@ -471,7 +532,8 @@ Same approach as `INFRASTRUCTURE_MIGRATION.md` §5–§8:
 2. **Move business rules to the backend.** The Iceberg API must enforce: effective invitation status,
    the allowed-actions table, self-action and last-Admin protection, expiry limits (max 7 days),
    invite validation and conflicts, password rules, single-use hashed tokens, revoking older reset links,
-   revoking links of disabled users, and blocking sign-in for disabled users.
+   revoking links of disabled users, blocking sign-in for disabled users, rate limiting of the public
+   link endpoints, and "a rejected password never uses up a link" (e.g. with a short lease as in §11).
 3. **Middleware authorization.** Every `/api/admin/*` endpoint must validate the identity token and
    require an active `Admin` before reaching the database, the same way RLS and Edge Function checks
    do today. `/api/auth/invitations/lookup` and `/api/auth/activate` are public but authorized by the
@@ -509,7 +571,11 @@ Other decisions in this contract:
 - After activation: go to `#/login`, no automatic sign-in.
 - Resend keeps the invitation id and issues a new token.
 - A picked expiry date means the end of that local day, capped at 7 days.
-- Password: 8 characters minimum, 72 bytes maximum.
+- Password: at least 8 characters (minimum), at most 72 bytes (maximum). Supabase Auth leaked-password
+  protection stays **on** where available (task F).
+- Rate limits for the public link endpoints (task F): at most 20 lookups and at most 10 activations per
+  client IP per 10 minutes, at most 10 attempts per token per hour.
+- Activation lease (task F): 60 seconds; Supabase Auth calls time out after 20 seconds.
 
 Database decisions (task B):
 
@@ -519,7 +585,7 @@ Database decisions (task B):
 - Token hash: SHA-256, 64 lower-case hex chars; hashing happens on the server.
 - Activation retry reuses only an auth user with the same email and **no** profile; nothing is deleted.
 
-**Changes to existing behavior (migration 11) — needs team lead approval:**
+**Changes to existing behavior (migration 12) — needs team lead approval:**
 
 - Policy `profiles_delete_admin_only` (migration 04) is dropped and `DELETE` on `profiles` is revoked
   from `anon` / `authenticated`: no hard delete of users through the API.
@@ -530,24 +596,39 @@ Database decisions (task B):
   Name / avatar updates are unchanged.
 - `user_invitations.user_id` / `invited_by` use `ON DELETE RESTRICT`: deleting a user who created
   links or has a reset link fails (history is kept).
+- Policy `profiles_insert_admin_only` (04) is dropped and `INSERT` on `profiles` is revoked from `anon` /
+  `authenticated` (task F, requested by the team lead): profiles are created **only** by
+  `fn_accept_invitation` (invitation flow, audited). The frontend never inserted profiles.
+- `fn_accept_invitation` / `fn_accept_password_reset` take the lease id (`claim_id`) instead of the token
+  hash; new functions `fn_claim_activation_link`, `fn_release_activation_link` (task F).
+- The public link endpoints return 429 `rate_limited` over the limits and 409 `link_busy` while another
+  request holds the link lease (task F).
+- `admin-users` calls Supabase Auth `getUser` and `fn_admin_current_caller` before every operation (one
+  extra round trip each, task F).
 
 Open:
 
 - Invitation fields `full_name`, `purpose`, `user_id` were added to the team lead's field list — needs
   team lead OK.
-- Policy `profiles_insert_admin_only` (04) still lets an Admin insert a profile directly through the API,
-  bypassing the invitation flow and audit. The frontend does not use it. Team lead decides.
+- ~~Policy `profiles_insert_admin_only` (04) lets an Admin insert a profile directly.~~ Closed in task F
+  (see the list above).
 - ~~Task C: concurrent activation requests could reset the password of a just-created auth user.~~
-  Handled in task C by ordering (§11 activation order, step 4); no database change.
+  Handled by the activation lease (§11): only the lease holder touches a password.
 - ~~Task C: on disable, also block sign-in in the auth service.~~ Handled in task C with a Supabase Auth
   ban + rollback on failure (§11). Already issued access tokens stay valid until they expire (≤ 1 hour);
   RLS denies them.
-- Rate limiting for `/invitations/lookup` and `/activate` (§10) is not implemented. Team lead decides
-  (e.g. at the API gateway).
-- Supabase Auth has its own password policy. If it is stricter than the app rule (8 characters, no
-  required character classes) or leaked password protection is on, a password that passes the app rule
-  can be rejected after a reset link (or a reused account's invitation) was already used. Keep the
-  policy aligned (§14 checklist).
+- ~~Rate limiting for `/invitations/lookup` and `/activate`.~~ Implemented in task F inside `auth-links`
+  (§9).
+- ~~A password rejected by Supabase Auth (stricter policy or leaked-password protection) could use up a
+  reset link or a reused account's invitation.~~ Handled in task F by the activation lease (§11): a
+  rejected password releases the lease and the link stays usable.
+- ~~An Auth call slower than the lease could let a second request claim the link.~~ Handled in task F:
+  every Auth admin call is aborted after 20 seconds and the lease is kept (not released) after a timeout
+  (§11). **Remaining (residual):** if Supabase still applies an aborted write more than 60 seconds later,
+  that write could replace a password set by a later attempt. Not expected in practice; listed for
+  completeness.
+- The client IP header used for the rate limit (`cf-connecting-ip`, then the right-most
+  `X-Forwarded-For`) is not documented by Supabase; confirm it on the real project (§14 checklist).
 - Who deploys migrations and Edge Functions (§14). The migrations and SQL tests have not been run
   against a database yet.
 - The frontend adapter (task D) is tested only with fakes; it has not been run against deployed Edge
@@ -557,12 +638,13 @@ Open:
 
 ## 14. Deployment (team lead)
 
-> Commands are documented only. Nothing was deployed or run in tasks A–C.
+> Commands are documented only. Nothing was deployed or run in tasks A–F.
 
 ### Order
 
-1. Apply migrations `10_user_management.sql` → `11_user_invitation_security.sql` →
-   `12_auth_user_lookup.sql` (after 01–09). Then run the SQL tests in a test project:
+1. Apply migrations 01–09, then the team lead's `10_restore_playbook.sql`, then ours:
+   `11_user_management.sql` → `12_user_invitation_security.sql` → `13_auth_user_lookup.sql`.
+   Then run the SQL tests in a test project:
    `supabase/tests/verification_tests.sql`, `supabase/tests/user_management_tests.sql`,
    `supabase/tests/auth_user_lookup_tests.sql` (all `BEGIN … ROLLBACK`).
 2. Type-check the functions (needs Deno):
@@ -595,24 +677,28 @@ Open:
 
 ### JWT gateway
 
-With the new JWT signing keys, the platform `verify_jwt` check may need to be turned off for
-`admin-users` too (`supabase functions deploy admin-users --no-verify-jwt`). This stays safe: the handler
-requires a Bearer token, and every admin RPC runs with the caller's JWT, which the database validates
-(`auth.uid()`, active Admin check). Verify this at deploy time.
+`admin-users` may be deployed **with or without** `--no-verify-jwt` (with the new JWT signing keys the
+platform check may need to be off). It is safe either way: before any admin RPC the function itself
+validates the Bearer JWT with Supabase Auth (`auth.getUser`) and checks that the caller is an active Admin
+(`fn_admin_current_caller`); then every admin RPC runs with the caller's JWT and the database checks
+`auth.uid()` and the active Admin role again (§9). `auth-links` is deployed with `--no-verify-jwt` and
+protects itself (token checks, rate limits, lease; §9, §11).
 
 ### Checklist
 
-- [ ] Migrations 10, 11, 12 applied; the three SQL test files pass.
+- [ ] Migrations 01–09, 10 (team lead), 11, 12, 13 applied; the three SQL test files pass.
 - [ ] `ALLOWED_ORIGINS` set to the app origin(s).
-- [ ] Both functions deployed with the right `verify_jwt` setting.
+- [ ] Both functions deployed (`auth-links` with `--no-verify-jwt`; `admin-users` with or without it).
 - [ ] **Supabase Auth → public sign-ups disabled.** The app has no sign-up screen; this protects the
       activation path that reuses an auth account without a profile.
-- [ ] **Supabase Auth password policy must not be stricter than the app rule** (minimum 8 characters,
-      no required character classes), and **leaked password protection should be off**; otherwise a weak
-      password can use up a reset link. (`auth-links` maps a Supabase "weak password" error to 400
-      `invalid_input`; for a new user no link is used, but in the password reset path and when an auth
-      account without a profile is reused, the link is already used.)
-- [ ] Manual check: invite → copy link → activate → sign in; disable → sign-in blocked; enable → allowed.
+- [ ] **Supabase Auth → leaked password protection: keep it ON** where the plan offers it. The app rule is
+      a minimum of 8 characters; a stricter Supabase policy is allowed. A password Supabase rejects returns
+      400 `invalid_input` and the link stays usable (activation lease, §11).
+- [ ] **Client IP header check** (rate limit, §9): send 21 lookups with an invalid-but-well-formed token,
+      each with a different forged `X-Forwarded-For` and `CF-Connecting-IP` value. The 21st must get 429.
+      If it does not, the platform passes the forged value through: stop and report it.
+- [ ] Manual check: invite → copy link → activate → sign in; disable → sign-in blocked; enable → allowed;
+      a password Supabase rejects keeps the link usable.
 
 ### Rollback
 

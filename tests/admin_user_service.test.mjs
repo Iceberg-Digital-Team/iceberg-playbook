@@ -211,5 +211,7 @@ test('AdminUserError has a code, default message and optional suggestion', () =>
   for (const [code, message] of Object.entries(ADMIN_ERROR_MESSAGES)) {
     assert.ok(message.length > 0, `${code} has a message`);
   }
-  assert.equal(Object.keys(ADMIN_ERROR_MESSAGES).length, 16);
+  assert.equal(Object.keys(ADMIN_ERROR_MESSAGES).length, 18);
+  assert.equal(ADMIN_ERROR_MESSAGES.rate_limited, 'Too many attempts. Please wait a few minutes and try again.');
+  assert.equal(ADMIN_ERROR_MESSAGES.link_busy, 'This link is being used right now. Please try again in a moment.');
 });

@@ -1,17 +1,17 @@
 -- ==============================================================================
 -- ICEBERG PLAYBOOK SUPABASE V2 MIGRATIONS
--- Migration 12: Auth User Lookup for Account Activation
+-- Migration 13: Auth User Lookup for Account Activation
 -- Target Project Ref: xwqqngkjlsgwsvacmjmf
 -- Mode: PROPOSED (DO NOT EXECUTE WITHOUT APPROVAL)
 -- ==============================================================================
 -- Contract: docs/USER_MANAGEMENT_API.md (section 11, activation order).
--- Requires: 10_user_management.sql, 11_user_invitation_security.sql.
+-- Requires: 11_user_management.sql, 12_user_invitation_security.sql.
 --
 -- Used only by the auth-links Edge Function (secret key / service_role) during
--- invitation activation:
+-- invitation activation, while it holds the link lease (fn_claim_activation_link):
 --   - account with a profile    -> email_in_use, its password is never touched;
 --   - account without a profile -> left over from an earlier failed activation,
---                                  may be reused (after fn_accept_invitation);
+--                                  may be reused (password set, then fn_accept_invitation);
 --   - no account                -> the server creates one.
 -- Supabase-specific parts are marked [SUPABASE].
 -- ==============================================================================

@@ -1,12 +1,13 @@
 -- ==============================================================================
 -- ICEBERG PLAYBOOK SUPABASE V2 MIGRATIONS
--- Migration 10: User Management Data Model (user status + invitation / password links)
+-- Migration 11: User Management Data Model (user status + invitation / password links)
 -- Target Project Ref: xwqqngkjlsgwsvacmjmf
 -- Mode: PROPOSED (DO NOT EXECUTE WITHOUT APPROVAL)
 -- ==============================================================================
 -- Contract: docs/USER_MANAGEMENT_API.md (sections 2, 3, 5, 7, 10).
+-- Requires: 01-09 and the team lead's 10_restore_playbook.sql (must run before this file).
 -- This file only defines data and constraints. Access rules, triggers and the
--- functions that change this data live in 11_user_invitation_security.sql.
+-- functions that change this data live in 12_user_invitation_security.sql.
 --
 -- Portability: plain PostgreSQL. Supabase-specific parts are marked [SUPABASE].
 -- Tokens: the server (Edge Function) creates a random token, puts it in the link
@@ -58,12 +59,14 @@ CREATE TABLE IF NOT EXISTS public.user_invitations (
     accepted_at TIMESTAMPTZ NULL,
     revoked_at TIMESTAMPTZ NULL,
     invited_by UUID NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+    claim_id UUID NULL,                          -- activation lease (see migration 12)
+    claimed_until TIMESTAMPTZ NULL,              -- activation lease end
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 COMMENT ON TABLE public.user_invitations IS
-    'Invitation and password reset links (one row per link). Only a SHA-256 hash of the token is stored. Single-use, expiring, revocable. Rows are never deleted. Accessed only through the functions in migration 11.';
+    'Invitation and password reset links (one row per link). Only a SHA-256 hash of the token is stored. Single-use, expiring, revocable. Rows are never deleted. Accessed only through the functions in migration 12.';
 COMMENT ON COLUMN public.user_invitations.id IS
     'Stable invitation id. Resend keeps the same id.';
 COMMENT ON COLUMN public.user_invitations.purpose IS
@@ -90,6 +93,10 @@ COMMENT ON COLUMN public.user_invitations.revoked_at IS
     'Set when the link is revoked by an Admin, replaced by a newer reset link, or its user is disabled (status Revoked).';
 COMMENT ON COLUMN public.user_invitations.invited_by IS
     'Admin who created the link. RESTRICT keeps history if someone tries to delete that user.';
+COMMENT ON COLUMN public.user_invitations.claim_id IS
+    'Activation lease id. Set by fn_claim_activation_link while one request sets the password; only that request can accept the link (fn_accept_*). Cleared on release, accept, revoke and resend. Not a secret, never returned to the browser.';
+COMMENT ON COLUMN public.user_invitations.claimed_until IS
+    'End of the activation lease (claim time + 60 seconds). While it is in the future, another request gets link_busy. After it, the link can be claimed again.';
 COMMENT ON COLUMN public.user_invitations.created_at IS
     'When the row was created.';
 COMMENT ON COLUMN public.user_invitations.updated_at IS
@@ -192,6 +199,19 @@ COMMENT ON CONSTRAINT chk_user_invitations_token_hash_format ON public.user_invi
     'Only a lower-case hex SHA-256 hash (64 chars) can be stored, so a plaintext token cannot be saved here by mistake.';
 
 DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_user_invitations_claim') THEN
+        ALTER TABLE public.user_invitations
+            ADD CONSTRAINT chk_user_invitations_claim
+            CHECK (
+                (claim_id IS NULL) = (claimed_until IS NULL)
+                AND (claim_id IS NULL OR status = 'Pending')
+            );
+    END IF;
+END $$;
+COMMENT ON CONSTRAINT chk_user_invitations_claim ON public.user_invitations IS
+    'A lease has both an id and an end time, and only an open (Pending) link can be leased. Accepted / Revoked links never keep a lease.';
+
+DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_user_invitations_token_hash') THEN
         ALTER TABLE public.user_invitations
             ADD CONSTRAINT uq_user_invitations_token_hash UNIQUE (token_hash);
@@ -216,6 +236,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_user_invitations_open_reset
 COMMENT ON INDEX public.uq_user_invitations_open_reset IS
     'At most one open (stored Pending) password reset link per user.';
 
+-- Rule: a lease id identifies exactly one link (accept / release look it up).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_invitations_claim_id
+    ON public.user_invitations (claim_id)
+    WHERE claim_id IS NOT NULL;
+COMMENT ON INDEX public.uq_user_invitations_claim_id IS
+    'A lease id belongs to one link; fast lookup for fn_accept_* and fn_release_activation_link.';
+
 CREATE INDEX IF NOT EXISTS idx_user_invitations_user_id ON public.user_invitations (user_id);
 COMMENT ON INDEX public.idx_user_invitations_user_id IS
     'Foreign key lookup: reset links of a user (revoke on disable / new link) and RESTRICT checks.';
@@ -232,7 +259,7 @@ COMMENT ON INDEX public.idx_user_invitations_pending IS
 
 -- 5. EFFECTIVE STATUS (pure rule, no data access)
 -- Rule: a stored Pending link past expires_at is Expired. Accepted / Revoked are final.
--- Every function in migration 11 uses this instead of reading status directly.
+-- Every function in migration 12 uses this instead of reading status directly.
 CREATE OR REPLACE FUNCTION public.fn_invitation_effective_status(
     p_status TEXT,
     p_expires_at TIMESTAMPTZ,

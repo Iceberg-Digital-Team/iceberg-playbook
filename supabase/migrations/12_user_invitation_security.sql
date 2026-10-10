@@ -1,11 +1,11 @@
 -- ==============================================================================
 -- ICEBERG PLAYBOOK SUPABASE V2 MIGRATIONS
--- Migration 11: User Management Security (RLS, privileges, triggers, functions)
+-- Migration 12: User Management Security (RLS, privileges, triggers, functions)
 -- Target Project Ref: xwqqngkjlsgwsvacmjmf
 -- Mode: PROPOSED (DO NOT EXECUTE WITHOUT APPROVAL)
 -- ==============================================================================
--- Contract: docs/USER_MANAGEMENT_API.md (sections 5, 6, 7, 8, 9, 10).
--- Requires: 10_user_management.sql.
+-- Contract: docs/USER_MANAGEMENT_API.md (sections 5, 6, 7, 8, 9, 10, 11).
+-- Requires: 10_restore_playbook.sql (team lead), 11_user_management.sql.
 --
 -- The database is the authority for every User Management rule. The frontend
 -- rules (src/services/adminUserRules.ts) are only UX mirrors.
@@ -17,7 +17,7 @@
 --       HINT    = '<suggestion JSON>'; -- optional, e.g. {"action":"resend_invitation","invitationId":"..."}
 --   Codes used here: unauthenticated, forbidden, not_found, invalid_input,
 --   invalid_status, email_in_use, invitation_exists, last_admin, self_action,
---   token_invalid, token_expired, token_used, token_revoked.
+--   token_invalid, token_expired, token_used, token_revoked, link_busy.
 --   Any other SQLSTATE is an unexpected error (server maps it to 'unknown').
 --   DETAIL / HINT / audit rows never contain a token, a token hash or a password.
 --
@@ -25,8 +25,18 @@
 --   fn_admin_*            : the signed-in Admin's own JWT (role authenticated).
 --                           Each function checks auth.uid() is an active Admin.
 --   fn_get_activation_link,
---   fn_accept_*           : server only (service_role), on behalf of the
+--   fn_claim_activation_link,
+--   fn_release_activation_link,
+--   fn_accept_*,
+--   fn_rate_limit_hit     : server only (service_role), on behalf of the
 --                           anonymous link holder.
+--
+-- ACTIVATION LEASE (a rejected password never uses up a link):
+--   claim (60 s lease, only if Pending, usable and not leased) -> the server sets
+--   the password in the auth service -> accept with the same claim id.
+--   If the password is rejected or anything fails, the server releases the lease
+--   and the link stays Pending. A second request during the lease gets link_busy
+--   and never touches a password.
 --
 -- CHANGES EXISTING BEHAVIOR (needs team lead OK):
 --   a) Policy profiles_delete_admin_only (04) is dropped and DELETE on profiles
@@ -39,16 +49,24 @@
 --      Name / avatar updates are unchanged.
 --   e) user_invitations foreign keys use ON DELETE RESTRICT: deleting a user who
 --      invited someone or has a reset link fails (history is kept).
+--   f) Policy profiles_insert_admin_only (04) is dropped and INSERT on profiles
+--      is revoked from API roles: profiles are created only by
+--      fn_accept_invitation (invitation flow), never by a direct API insert.
 --
 -- Supabase-specific parts are marked [SUPABASE]: auth.uid(), auth.users and the
 -- roles anon / authenticated / service_role.
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
--- 1. NO HARD DELETE OF USERS THROUGH THE API  (change a)
+-- 1. NO HARD DELETE AND NO DIRECT CREATE OF USERS THROUGH THE API  (changes a, f)
 -- ------------------------------------------------------------------------------
 DROP POLICY IF EXISTS "profiles_delete_admin_only" ON public.profiles;
 REVOKE DELETE ON TABLE public.profiles FROM anon, authenticated; -- [SUPABASE] roles
+
+-- Rule: profiles are created only through the invitation flow (fn_accept_invitation,
+-- SECURITY DEFINER), so a direct insert cannot skip its checks and audit.
+DROP POLICY IF EXISTS "profiles_insert_admin_only" ON public.profiles;
+REVOKE INSERT ON TABLE public.profiles FROM anon, authenticated; -- [SUPABASE] roles
 
 -- ------------------------------------------------------------------------------
 -- 2. DISABLED USERS GET NO ROLE  (changes b and c)
@@ -68,7 +86,7 @@ AS $$
       AND status = 'Active';
 $$;
 COMMENT ON FUNCTION public.fn_user_role() IS
-    'Role of the calling user, or NULL when the user has no profile or is Disabled. Base of all RLS role checks. Changed in migration 11 to respect profiles.status.';
+    'Role of the calling user, or NULL when the user has no profile or is Disabled. Base of all RLS role checks. Changed in migration 12 to respect profiles.status.';
 REVOKE EXECUTE ON FUNCTION public.fn_user_role() FROM PUBLIC, anon; -- [SUPABASE] role anon
 GRANT EXECUTE ON FUNCTION public.fn_user_role() TO authenticated, service_role; -- [SUPABASE] roles
 
@@ -112,7 +130,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.fn_get_current_actor() IS
-    'Actor (id, name, role) for content functions and audit. Changed in migration 11: a Disabled user resolves to Viewer.';
+    'Actor (id, name, role) for content functions and audit. Changed in migration 12: a Disabled user resolves to Viewer.';
 REVOKE EXECUTE ON FUNCTION public.fn_get_current_actor() FROM PUBLIC, anon; -- [SUPABASE] role anon
 GRANT EXECUTE ON FUNCTION public.fn_get_current_actor() TO authenticated, service_role; -- [SUPABASE] roles
 
@@ -212,7 +230,7 @@ BEGIN
     END IF;
 
     -- Who / what a link is for never changes; resend only replaces token_hash,
-    -- expires_at and issued_at.
+    -- expires_at and issued_at (the lease columns change while the link is Pending).
     IF NEW.id <> OLD.id
        OR NEW.purpose <> OLD.purpose
        OR NEW.email <> OLD.email
@@ -369,6 +387,28 @@ REVOKE EXECUTE ON FUNCTION public.fn_um_user_json(UUID) FROM PUBLIC, anon, authe
 -- 6. ADMIN OPERATIONS (caller: the Admin's own JWT, role authenticated)
 -- ------------------------------------------------------------------------------
 
+-- Caller check used by the admin-users Edge Function before any admin operation
+-- (defense in depth: the function verifies the JWT with the auth service AND the
+-- active Admin role here; every fn_admin_* function checks again).
+CREATE OR REPLACE FUNCTION public.fn_admin_current_caller()
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_actor RECORD;
+BEGIN
+    SELECT * INTO v_actor FROM public.fn_um_require_active_admin();
+    RETURN jsonb_build_object('user_id', v_actor.actor_id);
+END;
+$$;
+COMMENT ON FUNCTION public.fn_admin_current_caller() IS
+    'Active Admin only: returns {user_id} of the caller, or raises unauthenticated / forbidden. Used by the admin-users Edge Function to verify the caller before any admin RPC. No other data.';
+REVOKE EXECUTE ON FUNCTION public.fn_admin_current_caller() FROM PUBLIC, anon, service_role; -- [SUPABASE] roles
+GRANT EXECUTE ON FUNCTION public.fn_admin_current_caller() TO authenticated; -- [SUPABASE] role
+
 -- listUsers(): all users + open links (stored Pending, with effective status).
 CREATE OR REPLACE FUNCTION public.fn_admin_list_users()
 RETURNS JSONB
@@ -395,7 +435,7 @@ BEGIN
             ) ORDER BY p.full_name, p.email)
             FROM public.profiles p
         ), '[]'::jsonb),
-        -- Never token_hash. Only open links; accepted / revoked rows are history.
+        -- Never token_hash or lease data. Only open links; accepted / revoked rows are history.
         'invitations', COALESCE((
             SELECT jsonb_agg(jsonb_build_object(
                 'id', i.id,
@@ -514,7 +554,8 @@ COMMENT ON FUNCTION public.fn_admin_create_invitation(TEXT, TEXT, public.app_rol
 REVOKE EXECUTE ON FUNCTION public.fn_admin_create_invitation(TEXT, TEXT, public.app_role, TIMESTAMPTZ, TEXT) FROM PUBLIC, anon, service_role; -- [SUPABASE] roles
 GRANT EXECUTE ON FUNCTION public.fn_admin_create_invitation(TEXT, TEXT, public.app_role, TIMESTAMPTZ, TEXT) TO authenticated; -- [SUPABASE] role
 
--- resendInvitation(): same row, new token hash and expiry; the old link dies.
+-- resendInvitation(): same row, new token hash and expiry; the old link dies
+-- (also an active lease on it).
 CREATE OR REPLACE FUNCTION public.fn_admin_resend_invitation(
     p_invitation_id UUID,
     p_expires_at TIMESTAMPTZ,
@@ -556,7 +597,8 @@ BEGIN
 
     BEGIN
         UPDATE public.user_invitations
-        SET token_hash = p_token_hash, expires_at = p_expires_at, issued_at = NOW()
+        SET token_hash = p_token_hash, expires_at = p_expires_at, issued_at = NOW(),
+            claim_id = NULL, claimed_until = NULL
         WHERE id = v_inv.id;
     EXCEPTION WHEN unique_violation THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_input',
@@ -571,7 +613,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.fn_admin_resend_invitation(UUID, TIMESTAMPTZ, TEXT) IS
-    'resendInvitation: active Admin only. Pending or expired invitation keeps its id and gets a new token hash, expiry and issued_at; the old link stops working at once. Row lock prevents a race. Audited.';
+    'resendInvitation: active Admin only. Pending or expired invitation keeps its id and gets a new token hash, expiry and issued_at; the old link (and any lease on it) stops working at once. Row lock prevents a race. Audited.';
 REVOKE EXECUTE ON FUNCTION public.fn_admin_resend_invitation(UUID, TIMESTAMPTZ, TEXT) FROM PUBLIC, anon, service_role; -- [SUPABASE] roles
 GRANT EXECUTE ON FUNCTION public.fn_admin_resend_invitation(UUID, TIMESTAMPTZ, TEXT) TO authenticated; -- [SUPABASE] role
 
@@ -597,7 +639,9 @@ BEGIN
             DETAIL = 'Only pending invitations can be revoked.';
     END IF;
 
-    UPDATE public.user_invitations SET status = 'Revoked', revoked_at = NOW() WHERE id = v_inv.id;
+    UPDATE public.user_invitations
+    SET status = 'Revoked', revoked_at = NOW(), claim_id = NULL, claimed_until = NULL
+    WHERE id = v_inv.id;
 
     INSERT INTO public.audit_logs (entity_type, entity_id, action, actor_id, actor_name, changes)
     VALUES ('invitation', v_inv.id::TEXT, 'REVOKE', v_actor.actor_id, v_actor.actor_name,
@@ -605,7 +649,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.fn_admin_revoke_invitation(UUID) IS
-    'revokeInvitation: active Admin only. Only a pending, not expired invitation can be revoked; Revoked is final. Audited.';
+    'revokeInvitation: active Admin only. Only a pending, not expired invitation can be revoked; Revoked is final and ends any lease. Audited.';
 REVOKE EXECUTE ON FUNCTION public.fn_admin_revoke_invitation(UUID) FROM PUBLIC, anon, service_role; -- [SUPABASE] roles
 GRANT EXECUTE ON FUNCTION public.fn_admin_revoke_invitation(UUID) TO authenticated; -- [SUPABASE] role
 
@@ -702,9 +746,9 @@ BEGIN
 
     UPDATE public.profiles SET status = 'Disabled', updated_at = NOW() WHERE id = p_user_id;
 
-    -- A disabled user cannot use or receive links.
+    -- A disabled user cannot use or receive links (an active lease ends too).
     UPDATE public.user_invitations
-    SET status = 'Revoked', revoked_at = NOW()
+    SET status = 'Revoked', revoked_at = NOW(), claim_id = NULL, claimed_until = NULL
     WHERE purpose = 'password_reset' AND user_id = p_user_id AND status = 'Pending';
     GET DIAGNOSTICS v_revoked = ROW_COUNT;
 
@@ -716,7 +760,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.fn_admin_disable_user(UUID) IS
-    'disableUser: active Admin only. Active target only; not the caller (self_action); not the last active Admin (last_admin). Revokes the user''s open password links in the same transaction. History is kept (no delete). Audited.';
+    'disableUser: active Admin only. Active target only; not the caller (self_action); not the last active Admin (last_admin). Revokes the user''s open password links (and their leases) in the same transaction. History is kept (no delete). Audited.';
 REVOKE EXECUTE ON FUNCTION public.fn_admin_disable_user(UUID) FROM PUBLIC, anon, service_role; -- [SUPABASE] roles
 GRANT EXECUTE ON FUNCTION public.fn_admin_disable_user(UUID) TO authenticated; -- [SUPABASE] role
 
@@ -799,9 +843,9 @@ BEGIN
     v_email := lower(btrim(v_user.email));
     v_name := left(COALESCE(NULLIF(btrim(v_user.full_name), ''), v_email), 100);
 
-    -- A new link revokes that user's older unused links.
+    -- A new link revokes that user's older unused links (and ends their leases).
     UPDATE public.user_invitations
-    SET status = 'Revoked', revoked_at = NOW()
+    SET status = 'Revoked', revoked_at = NOW(), claim_id = NULL, claimed_until = NULL
     WHERE purpose = 'password_reset' AND user_id = p_user_id AND status = 'Pending';
     GET DIAGNOSTICS v_revoked = ROW_COUNT;
 
@@ -822,16 +866,19 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.fn_admin_create_password_reset_link(UUID, TIMESTAMPTZ, TEXT) IS
-    'createPasswordResetLink: active Admin only. Active target only; expiry max 7 days; revokes the user''s older open reset links, then stores the new link hash. Audited.';
+    'createPasswordResetLink: active Admin only. Active target only; expiry max 7 days; revokes the user''s older open reset links (and their leases), then stores the new link hash. Audited.';
 REVOKE EXECUTE ON FUNCTION public.fn_admin_create_password_reset_link(UUID, TIMESTAMPTZ, TEXT) FROM PUBLIC, anon, service_role; -- [SUPABASE] roles
 GRANT EXECUTE ON FUNCTION public.fn_admin_create_password_reset_link(UUID, TIMESTAMPTZ, TEXT) TO authenticated; -- [SUPABASE] role
 
 -- ------------------------------------------------------------------------------
 -- 7. LINK HOLDER OPERATIONS (caller: server only, role service_role)
 -- The server hashes the token from #/activate?token=... and passes only the hash.
+-- Activation: fn_claim_activation_link -> set password in the auth service ->
+-- fn_accept_* with the claim id (or fn_release_activation_link on any failure).
 -- ------------------------------------------------------------------------------
 
 -- getInvitation(): only the ActivationLinkInfo fields; dead links raise token_*.
+-- A leased link is still Pending and is shown normally.
 CREATE OR REPLACE FUNCTION public.fn_get_activation_link(p_token_hash TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -884,11 +931,9 @@ COMMENT ON FUNCTION public.fn_get_activation_link(TEXT) IS
 REVOKE EXECUTE ON FUNCTION public.fn_get_activation_link(TEXT) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
 GRANT EXECUTE ON FUNCTION public.fn_get_activation_link(TEXT) TO service_role; -- [SUPABASE] role
 
--- activateAccount() for an invitation. Called AFTER the server created (or
--- reused an orphan) auth user with the invited email. In ONE transaction: lock the
--- link, re-check it, create the profile, mark the link Accepted, write audit.
--- If anything fails, nothing is saved and the link stays Pending.
-CREATE OR REPLACE FUNCTION public.fn_accept_invitation(p_token_hash TEXT, p_auth_user_id UUID)
+-- activateAccount() step 1: lease the link for 60 seconds. Only one request can
+-- hold the lease, so only that request sets a password for this link.
+CREATE OR REPLACE FUNCTION public.fn_claim_activation_link(p_token_hash TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -897,16 +942,15 @@ AS $$
 DECLARE
     v_inv RECORD;
     v_status TEXT;
-    v_auth_email TEXT;
+    v_claim_id UUID := gen_random_uuid();
 BEGIN
     IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$' THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_invalid', DETAIL = 'This link is not valid.';
     END IF;
 
-    -- Single use: concurrent requests with the same token wait here; the second
-    -- one then sees Accepted and gets token_used.
+    -- Concurrent requests with the same token wait here, one after the other.
     SELECT * INTO v_inv FROM public.user_invitations WHERE token_hash = p_token_hash FOR UPDATE;
-    IF NOT FOUND OR v_inv.purpose <> 'invitation' THEN
+    IF NOT FOUND THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_invalid', DETAIL = 'This link is not valid.';
     END IF;
 
@@ -917,6 +961,95 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_revoked', DETAIL = 'This link has been revoked.';
     ELSIF v_status = 'Expired' THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_expired', DETAIL = 'This link has expired.';
+    END IF;
+
+    -- A reset link can only be used for an Active user.
+    IF v_inv.purpose = 'password_reset' AND NOT EXISTS (
+        SELECT 1 FROM public.profiles p WHERE p.id = v_inv.user_id AND p.status = 'Active'
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_revoked', DETAIL = 'This link has been revoked.';
+    END IF;
+
+    -- Another request holds the lease: no password may be touched now.
+    IF v_inv.claimed_until IS NOT NULL AND v_inv.claimed_until > NOW() THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'link_busy',
+            DETAIL = 'This link is being used right now. Please try again in a moment.';
+    END IF;
+
+    UPDATE public.user_invitations
+    SET claim_id = v_claim_id, claimed_until = NOW() + INTERVAL '60 seconds'
+    WHERE id = v_inv.id;
+
+    -- claim_id and user_id are for the server only; they are never sent to the browser.
+    RETURN jsonb_build_object(
+        'claim_id', v_claim_id,
+        'purpose', v_inv.purpose,
+        'email', v_inv.email,
+        'user_id', v_inv.user_id
+    );
+END;
+$$;
+COMMENT ON FUNCTION public.fn_claim_activation_link(TEXT) IS
+    'activateAccount step 1 (server only): locks a usable link (token_* for dead links, token_revoked for a reset link of a non-Active user), raises link_busy while another lease is active, otherwise leases it for 60 seconds and returns {claim_id, purpose, email, user_id}. The link stays Pending.';
+REVOKE EXECUTE ON FUNCTION public.fn_claim_activation_link(TEXT) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
+GRANT EXECUTE ON FUNCTION public.fn_claim_activation_link(TEXT) TO service_role; -- [SUPABASE] role
+
+-- activateAccount() on failure: give the link back (it stays Pending) so the
+-- user can try again at once, e.g. after a password the auth service rejected.
+CREATE OR REPLACE FUNCTION public.fn_release_activation_link(p_claim_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_count INTEGER;
+BEGIN
+    IF p_claim_id IS NULL THEN
+        RETURN FALSE;
+    END IF;
+    UPDATE public.user_invitations
+    SET claim_id = NULL, claimed_until = NULL
+    WHERE claim_id = p_claim_id AND status = 'Pending';
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RETURN v_count > 0;
+END;
+$$;
+COMMENT ON FUNCTION public.fn_release_activation_link(UUID) IS
+    'activateAccount on failure (server only): ends the lease with this claim id; the link stays Pending and usable. Returns false when the lease is already gone (idempotent, never raises).';
+REVOKE EXECUTE ON FUNCTION public.fn_release_activation_link(UUID) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
+GRANT EXECUTE ON FUNCTION public.fn_release_activation_link(UUID) TO service_role; -- [SUPABASE] role
+
+-- activateAccount() for an invitation, step 3. Called AFTER the server created (or
+-- reused an orphan) auth user with the invited email and this request's password.
+-- In ONE transaction: lock the leased link, re-check it, create the profile, mark
+-- the link Accepted, write audit. If anything fails, nothing is saved and the link
+-- stays Pending (the server then releases the lease).
+CREATE OR REPLACE FUNCTION public.fn_accept_invitation(p_claim_id UUID, p_auth_user_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_inv RECORD;
+    v_auth_email TEXT;
+BEGIN
+    -- Only the holder of the lease can accept. A lost lease (released, or expired
+    -- and claimed by another request) is not found here.
+    SELECT * INTO v_inv FROM public.user_invitations WHERE claim_id = p_claim_id FOR UPDATE;
+    IF p_claim_id IS NULL OR NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'link_busy',
+            DETAIL = 'This link is being used right now. Please try again in a moment.';
+    END IF;
+    IF v_inv.purpose <> 'invitation' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_invalid', DETAIL = 'This link is not valid.';
+    END IF;
+    -- A lease exists only on a Pending link (chk_user_invitations_claim); kept as a second lock.
+    IF v_inv.status = 'Accepted' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_used', DETAIL = 'This link has already been used.';
+    ELSIF v_inv.status = 'Revoked' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_revoked', DETAIL = 'This link has been revoked.';
     END IF;
 
     -- The auth account must exist and belong to the invited email.
@@ -943,7 +1076,9 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'email_in_use', DETAIL = 'This email already has an account.';
     END;
 
-    UPDATE public.user_invitations SET status = 'Accepted', accepted_at = NOW() WHERE id = v_inv.id;
+    UPDATE public.user_invitations
+    SET status = 'Accepted', accepted_at = NOW(), claim_id = NULL, claimed_until = NULL
+    WHERE id = v_inv.id;
 
     INSERT INTO public.audit_logs (entity_type, entity_id, action, actor_id, actor_name, changes)
     VALUES ('invitation', v_inv.id::TEXT, 'ACCEPT', p_auth_user_id, v_inv.full_name,
@@ -952,14 +1087,14 @@ BEGIN
     RETURN jsonb_build_object('purpose', 'invitation', 'email', v_inv.email);
 END;
 $$;
-COMMENT ON FUNCTION public.fn_accept_invitation(TEXT, UUID) IS
-    'activateAccount for an invitation (server only): locks the link (single use, race-safe), checks it is usable, checks the auth account email matches, creates the Active profile with the invited name/role and marks the link Accepted in one transaction. Audited.';
-REVOKE EXECUTE ON FUNCTION public.fn_accept_invitation(TEXT, UUID) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
-GRANT EXECUTE ON FUNCTION public.fn_accept_invitation(TEXT, UUID) TO service_role; -- [SUPABASE] role
+COMMENT ON FUNCTION public.fn_accept_invitation(UUID, UUID) IS
+    'activateAccount for an invitation (server only): locks the link by its lease id (only the lease holder; lost lease -> link_busy), checks the auth account email matches, creates the Active profile with the invited name/role, marks the link Accepted and ends the lease in one transaction. Audited.';
+REVOKE EXECUTE ON FUNCTION public.fn_accept_invitation(UUID, UUID) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
+GRANT EXECUTE ON FUNCTION public.fn_accept_invitation(UUID, UUID) TO service_role; -- [SUPABASE] role
 
--- activateAccount() for a password reset link. Called BEFORE the server sets the
--- new password: the link is claimed here first, so it can never be used twice.
-CREATE OR REPLACE FUNCTION public.fn_accept_password_reset(p_token_hash TEXT)
+-- activateAccount() for a password reset link, step 3. Called AFTER the server set
+-- the new password while holding the lease.
+CREATE OR REPLACE FUNCTION public.fn_accept_password_reset(p_claim_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -967,25 +1102,20 @@ SET search_path = ''
 AS $$
 DECLARE
     v_inv RECORD;
-    v_status TEXT;
     v_user RECORD;
 BEGIN
-    IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$' THEN
+    SELECT * INTO v_inv FROM public.user_invitations WHERE claim_id = p_claim_id FOR UPDATE;
+    IF p_claim_id IS NULL OR NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'link_busy',
+            DETAIL = 'This link is being used right now. Please try again in a moment.';
+    END IF;
+    IF v_inv.purpose <> 'password_reset' THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_invalid', DETAIL = 'This link is not valid.';
     END IF;
-
-    SELECT * INTO v_inv FROM public.user_invitations WHERE token_hash = p_token_hash FOR UPDATE;
-    IF NOT FOUND OR v_inv.purpose <> 'password_reset' THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_invalid', DETAIL = 'This link is not valid.';
-    END IF;
-
-    v_status := public.fn_invitation_effective_status(v_inv.status, v_inv.expires_at, NOW());
-    IF v_status = 'Accepted' THEN
+    IF v_inv.status = 'Accepted' THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_used', DETAIL = 'This link has already been used.';
-    ELSIF v_status = 'Revoked' THEN
+    ELSIF v_inv.status = 'Revoked' THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_revoked', DETAIL = 'This link has been revoked.';
-    ELSIF v_status = 'Expired' THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_expired', DETAIL = 'This link has expired.';
     END IF;
 
     -- The user must still be Active (a Disabled user cannot use links).
@@ -994,17 +1124,114 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'token_revoked', DETAIL = 'This link has been revoked.';
     END IF;
 
-    UPDATE public.user_invitations SET status = 'Accepted', accepted_at = NOW() WHERE id = v_inv.id;
+    UPDATE public.user_invitations
+    SET status = 'Accepted', accepted_at = NOW(), claim_id = NULL, claimed_until = NULL
+    WHERE id = v_inv.id;
 
     INSERT INTO public.audit_logs (entity_type, entity_id, action, actor_id, actor_name, changes)
     VALUES ('invitation', v_inv.id::TEXT, 'PASSWORD_RESET', v_user.id, v_user.full_name,
             jsonb_build_object('user_id', v_user.id));
 
-    -- user_id is for the server (to set the password); it is not sent to the browser.
-    RETURN jsonb_build_object('purpose', 'password_reset', 'email', v_inv.email, 'user_id', v_user.id);
+    RETURN jsonb_build_object('purpose', 'password_reset', 'email', v_inv.email);
 END;
 $$;
-COMMENT ON FUNCTION public.fn_accept_password_reset(TEXT) IS
-    'activateAccount for a password reset link (server only): locks and claims the link (single use, race-safe) for an Active user and returns user_id so the server can set the new password. Role and status do not change. Audited.';
-REVOKE EXECUTE ON FUNCTION public.fn_accept_password_reset(TEXT) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
-GRANT EXECUTE ON FUNCTION public.fn_accept_password_reset(TEXT) TO service_role; -- [SUPABASE] role
+COMMENT ON FUNCTION public.fn_accept_password_reset(UUID) IS
+    'activateAccount for a password reset link (server only): locks the link by its lease id (only the lease holder; lost lease -> link_busy), checks the user is still Active, marks the link Accepted and ends the lease. Role and status do not change. Audited.';
+REVOKE EXECUTE ON FUNCTION public.fn_accept_password_reset(UUID) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
+GRANT EXECUTE ON FUNCTION public.fn_accept_password_reset(UUID) TO service_role; -- [SUPABASE] role
+
+-- ------------------------------------------------------------------------------
+-- 8. RATE LIMITING FOR THE PUBLIC LINK ENDPOINTS (caller: server only)
+-- Edge Functions are stateless, so the counters live here. The server sends only
+-- an HMAC-SHA-256 of the key (client IP or token hash); no raw IP and no token
+-- hash is stored. Counter rows are not user data and are cleaned up after 1 day.
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.auth_link_rate_limits (
+    key_hash TEXT PRIMARY KEY,
+    window_started_at TIMESTAMPTZ NOT NULL,
+    hits INTEGER NOT NULL
+);
+COMMENT ON TABLE public.auth_link_rate_limits IS
+    'Fixed-window request counters for the public link endpoints (lookup / activate). One row per key. Accessed only through fn_rate_limit_hit. Not user data; rows older than 1 day are deleted.';
+COMMENT ON COLUMN public.auth_link_rate_limits.key_hash IS
+    'Lower-case hex HMAC-SHA-256 of "<kind>:<value>" (kind lookup-ip / activate-ip / token), made by the server. Never a raw IP or token hash.';
+COMMENT ON COLUMN public.auth_link_rate_limits.window_started_at IS
+    'Start of the current counting window.';
+COMMENT ON COLUMN public.auth_link_rate_limits.hits IS
+    'Requests counted in the current window (including rejected ones).';
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_auth_link_rate_limits_key_hash') THEN
+        ALTER TABLE public.auth_link_rate_limits
+            ADD CONSTRAINT chk_auth_link_rate_limits_key_hash
+            CHECK (key_hash ~ '^[0-9a-f]{64}$');
+    END IF;
+END $$;
+COMMENT ON CONSTRAINT chk_auth_link_rate_limits_key_hash ON public.auth_link_rate_limits IS
+    'Only a 64-char lower-case hex hash can be stored, so a raw IP or token cannot be saved here by mistake.';
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_auth_link_rate_limits_hits') THEN
+        ALTER TABLE public.auth_link_rate_limits
+            ADD CONSTRAINT chk_auth_link_rate_limits_hits
+            CHECK (hits >= 1);
+    END IF;
+END $$;
+COMMENT ON CONSTRAINT chk_auth_link_rate_limits_hits ON public.auth_link_rate_limits IS
+    'A stored window has at least one counted request.';
+
+CREATE INDEX IF NOT EXISTS idx_auth_link_rate_limits_window
+    ON public.auth_link_rate_limits (window_started_at);
+COMMENT ON INDEX public.idx_auth_link_rate_limits_window IS
+    'Cheap cleanup of old counter rows.';
+
+-- RLS on with no policies; no API role (not even service_role) reads the table directly.
+ALTER TABLE public.auth_link_rate_limits ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.auth_link_rate_limits FROM PUBLIC, anon, authenticated, service_role; -- [SUPABASE] roles
+
+-- Counts one request for a key and says whether it is allowed (atomic, race-safe:
+-- one INSERT ... ON CONFLICT DO UPDATE per call).
+CREATE OR REPLACE FUNCTION public.fn_rate_limit_hit(p_key_hash TEXT, p_limit INTEGER, p_window_seconds INTEGER)
+RETURNS TABLE (allowed BOOLEAN, retry_after_seconds INTEGER)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_now TIMESTAMPTZ := NOW();
+    v_window INTERVAL;
+    v_hits INTEGER;
+    v_started TIMESTAMPTZ;
+BEGIN
+    IF p_key_hash IS NULL OR p_key_hash !~ '^[0-9a-f]{64}$'
+       OR p_limit IS NULL OR p_limit < 1 OR p_limit > 1000
+       OR p_window_seconds IS NULL OR p_window_seconds < 1 OR p_window_seconds > 86400 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_input',
+            DETAIL = 'The rate limit request is not valid.';
+    END IF;
+    v_window := make_interval(secs => p_window_seconds);
+
+    -- Cleanup: at most 100 rows older than the longest window (1 day) per call.
+    DELETE FROM public.auth_link_rate_limits
+    WHERE ctid IN (
+        SELECT r.ctid FROM public.auth_link_rate_limits r
+        WHERE r.window_started_at < v_now - INTERVAL '1 day'
+        LIMIT 100
+    );
+
+    INSERT INTO public.auth_link_rate_limits AS r (key_hash, window_started_at, hits)
+    VALUES (p_key_hash, v_now, 1)
+    ON CONFLICT (key_hash) DO UPDATE SET
+        hits = CASE WHEN r.window_started_at <= v_now - v_window THEN 1 ELSE LEAST(r.hits + 1, 1000000) END,
+        window_started_at = CASE WHEN r.window_started_at <= v_now - v_window THEN v_now ELSE r.window_started_at END
+    RETURNING r.hits, r.window_started_at INTO v_hits, v_started;
+
+    RETURN QUERY SELECT
+        v_hits <= p_limit,
+        GREATEST(1, CEIL(EXTRACT(EPOCH FROM (v_started + v_window - v_now)))::INTEGER);
+END;
+$$;
+COMMENT ON FUNCTION public.fn_rate_limit_hit(TEXT, INTEGER, INTEGER) IS
+    'Server only: counts one request for a hashed key in a fixed window of p_window_seconds (1-86400) and returns allowed = hits <= p_limit (1-1000) plus the seconds left in the window. Deletes at most 100 counter rows older than 1 day per call.';
+REVOKE EXECUTE ON FUNCTION public.fn_rate_limit_hit(TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated; -- [SUPABASE] roles
+GRANT EXECUTE ON FUNCTION public.fn_rate_limit_hit(TEXT, INTEGER, INTEGER) TO service_role; -- [SUPABASE] role

@@ -157,7 +157,8 @@ test('auth-links calls work without a session and never check it', async () => {
 
 test('Edge Function error bodies pass through with code, message and suggestion', async () => {
   const codes = ['unauthenticated', 'forbidden', 'not_found', 'invalid_input', 'invalid_status', 'email_in_use',
-    'invitation_exists', 'last_admin', 'self_action', 'token_invalid', 'token_expired', 'token_used', 'token_revoked', 'unknown'];
+    'invitation_exists', 'last_admin', 'self_action', 'token_invalid', 'token_expired', 'token_used', 'token_revoked', 'unknown',
+    'rate_limited', 'link_busy'];
   for (const code of codes) {
     const { client } = fakeClient({ results: { 'admin-users/users': httpError(409, { error: { code, message: `Message ${code}.`, suggestion: null } }) } });
     await assert.rejects(createSupabaseAdminUserAdapter(client).listUsers(), err => {

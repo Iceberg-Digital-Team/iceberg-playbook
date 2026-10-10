@@ -36,10 +36,11 @@ All database schema definitions, security rules, routines, and seed datasets are
 | **`07_soft_delete_security.sql`** | Elevates soft-delete functions (`fn_soft_delete_*`) to `SECURITY DEFINER` with `SET search_path = ''`. Prevents RLS permission denial when non-admin users (such as `Support`) update records to set `deleted_at = NOW()`. |
 | **`08_monotonic_code_generation.sql`** | Upgrades `fn_generate_issue_code`, `fn_generate_guide_code`, and `fn_generate_sop_code` to `SECURITY DEFINER` routines that lock the parent playbook row (`FOR UPDATE`) and compute sequence numbers across **all** historical rows (active + soft-deleted), guaranteeing non-reusable monotonic IDs. |
 | **`09_issue_jira_code.sql`** | Adds the optional `jira_code TEXT DEFAULT NULL` column to `public.issues` and creates a partial index `idx_issues_jira_code` on active issues. |
-| **`10_user_management.sql`** | User Management data model: `profiles.status` (`Active` / `Disabled`), the `user_invitations` table (invitation and password reset links, token stored only as SHA-256 hash), constraints and indexes. See `docs/USER_MANAGEMENT_API.md`. *(PROPOSED, not deployed yet.)* |
-| **`11_user_invitation_security.sql`** | User Management security: RLS and privileges for `user_invitations`, role/status and no-delete triggers, `fn_admin_*` / activation functions, and changes to `fn_user_role`, `fn_get_current_actor` and the `profiles` delete policy. *(PROPOSED, not deployed yet.)* |
-| **`12_auth_user_lookup.sql`** | Server-only `fn_find_auth_user_by_email` used by the `auth-links` Edge Function during account activation. *(PROPOSED, not deployed yet.)* |
-| **`supabase/functions/`** (Edge Functions) | `admin-users` (admin operations, caller JWT) and `auth-links` (link lookup + activation, deployed with `--no-verify-jwt`), shared code in `_shared/`. Deploy steps: `docs/USER_MANAGEMENT_API.md` §14. *(Not deployed yet.)* |
+| **`10_restore_playbook.sql`** | The team lead's migration (arrives from `main`). Must run before the User Management migrations 11–13. |
+| **`11_user_management.sql`** | User Management data model: `profiles.status` (`Active` / `Disabled`), the `user_invitations` table (invitation and password reset links, token stored only as SHA-256 hash, activation lease columns), constraints and indexes. See `docs/USER_MANAGEMENT_API.md`. *(PROPOSED, not deployed yet.)* |
+| **`12_user_invitation_security.sql`** | User Management security: RLS and privileges for `user_invitations`, role/status and no-delete triggers, `fn_admin_*` / activation (claim, release, accept) functions, rate limit table and `fn_rate_limit_hit`, and changes to `fn_user_role`, `fn_get_current_actor` and the `profiles` delete / insert policies. *(PROPOSED, not deployed yet.)* |
+| **`13_auth_user_lookup.sql`** | Server-only `fn_find_auth_user_by_email` used by the `auth-links` Edge Function during account activation. *(PROPOSED, not deployed yet.)* |
+| **`supabase/functions/`** (Edge Functions) | `admin-users` (admin operations; verifies the caller's JWT and active Admin role itself) and `auth-links` (link lookup + activation, deployed with `--no-verify-jwt`, with its own rate limiting), shared code in `_shared/`. Deploy steps: `docs/USER_MANAGEMENT_API.md` §14. *(Not deployed yet.)* |
 
 ---
 
@@ -59,9 +60,10 @@ The following migrations establish the schema, security model, and stored proced
 6. `07_soft_delete_security.sql`
 7. `08_monotonic_code_generation.sql`
 8. `09_issue_jira_code.sql`
-9. `10_user_management.sql`
-10. `11_user_invitation_security.sql`
-11. `12_auth_user_lookup.sql`
+9. `10_restore_playbook.sql` (team lead)
+10. `11_user_management.sql`
+11. `12_user_invitation_security.sql`
+12. `13_auth_user_lookup.sql`
 
 > [!IMPORTANT]
 > **Production Guidance for `05_seed_data.sql`**:
@@ -334,9 +336,9 @@ psql "$DATABASE_URL" -f supabase/tests/verification_tests.sql
 A successful execution will emit `NOTICE` statements for all 9 tests and report:
 `NOTICE: === ALL 9 ISOLATED VERIFICATION TESTS PASSED (9/9) ===` followed by `ROLLBACK`.
 
-User Management tests (after migrations 10 and 11): `supabase/tests/user_management_tests.sql` — 17 tests in `BEGIN … ROLLBACK`, ends with `NOTICE: === ALL 17 USER MANAGEMENT TESTS PASSED (17/17) ===`.
+User Management tests (after migrations 01–12): `supabase/tests/user_management_tests.sql` — 22 tests in `BEGIN … ROLLBACK`, ends with `NOTICE: === ALL 22 USER MANAGEMENT TESTS PASSED (22/22) ===`.
 
-Auth user lookup tests (after migration 12): `supabase/tests/auth_user_lookup_tests.sql` — 4 tests in `BEGIN … ROLLBACK`, ends with `NOTICE: === ALL 4 AUTH USER LOOKUP TESTS PASSED (4/4) ===`.
+Auth user lookup tests (after migration 13): `supabase/tests/auth_user_lookup_tests.sql` — 4 tests in `BEGIN … ROLLBACK`, ends with `NOTICE: === ALL 4 AUTH USER LOOKUP TESTS PASSED (4/4) ===`.
 
 ---
 

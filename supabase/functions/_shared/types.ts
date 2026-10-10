@@ -95,6 +95,10 @@ export interface SupabaseKeys {
 export interface AdminDeps {
   keys: SupabaseKeys;
   allowedOrigins: string[];
+  // Supabase Auth: validates the caller's JWT on the Auth server (signature, expiry, user, session).
+  getAuthUser(jwt: string): Promise<{ userId: string | null; error: AuthAdminError | null }>;
+  // fn_admin_current_caller with the caller's own JWT: {user_id} of an active Admin, or a P0001 error.
+  checkActiveAdmin(authorization: string): Promise<RpcResult>;
   // RPC with the caller's own Authorization header (the database checks auth.uid()).
   callerRpc(authorization: string, fn: string, args: Record<string, unknown>): Promise<RpcResult>;
   // Supabase Auth admin call with the secret key: block / allow sign-in.
@@ -106,6 +110,10 @@ export interface AuthLinkDeps {
   allowedOrigins: string[];
   // RPC with the secret key (server only functions).
   serviceRpc(fn: string, args: Record<string, unknown>): Promise<RpcResult>;
+  // fn_rate_limit_hit with the secret key: data = [{ allowed, retry_after_seconds }].
+  rateLimitHit(keyHash: string, limit: number, windowSeconds: number): Promise<RpcResult>;
   createAuthUser(email: string, password: string): Promise<{ userId: string | null; error: AuthAdminError | null }>;
   updateAuthUser(userId: string, attributes: { password: string; emailConfirm?: boolean }): Promise<AuthAdminResult>;
+  // Maximum wait for one Supabase Auth admin call; default AUTH_CALL_TIMEOUT_MS (tests pass a short value).
+  authTimeoutMs?: number;
 }

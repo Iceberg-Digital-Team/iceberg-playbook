@@ -1,9 +1,13 @@
 // admin-users Edge Function: every /api/admin/* operation of docs/USER_MANAGEMENT_API.md §9.
 // Pure handler (no Deno APIs): index.ts passes the real dependencies, tests pass fakes.
 //
-// Every RPC runs with the caller's own Authorization header, so the database checks that
-// auth.uid() is an active Admin (migration 11). No user id is ever taken from the body.
-// The secret key is used only for the Supabase Auth ban / unban after disable / enable.
+// Defense in depth (safe with and without the platform verify_jwt check):
+//   1. the handler validates the Bearer JWT with Supabase Auth (getAuthUser);
+//   2. the handler checks the caller is an active Admin (fn_admin_current_caller, caller's JWT);
+//   3. every admin RPC runs with the caller's own Authorization header, so the database checks
+//      again that auth.uid() is an active Admin (migration 12).
+// No admin RPC runs before 1 and 2 pass. No user id is ever taken from the body.
+// The secret key is used only for the JWT check and the Supabase Auth ban / unban.
 import { ApiError, mapRpcError, toApiError } from '../_shared/errors.ts';
 import { errorResponse, evaluateCors, json, matchRoute, readJsonBody, routePath } from '../_shared/http.ts';
 import type { RouteDefinition } from '../_shared/http.ts';
@@ -40,6 +44,42 @@ function bearerHeader(request: Request): string {
   return header.trim();
 }
 
+// Steps 1 and 2 above. Missing / invalid JWT -> 401; not an active Admin -> 403;
+// Auth server or database unreachable -> 500 (never a silent pass).
+async function verifyAdminCaller(deps: AdminDeps, authorization: string): Promise<void> {
+  const jwt = authorization.replace(/^Bearer\s+/i, '');
+
+  let user: { userId: string | null; error: { status?: number } | null };
+  try {
+    user = await deps.getAuthUser(jwt);
+  } catch {
+    safeLog('caller_check_failed', { step: 'auth' });
+    throw new ApiError('unknown');
+  }
+  // No HTTP status (network failure, status 0) or 5xx: the Auth server could not answer.
+  const status = user.error?.status;
+  if (user.error && (!status || status >= 500)) {
+    safeLog('caller_check_failed', { step: 'auth' });
+    throw new ApiError('unknown');
+  }
+  if (user.error || !isUuid(user.userId)) throw new ApiError('unauthenticated');
+
+  let admin: Awaited<ReturnType<AdminDeps['checkActiveAdmin']>>;
+  try {
+    admin = await deps.checkActiveAdmin(authorization);
+  } catch {
+    safeLog('caller_check_failed', { step: 'admin' });
+    throw new ApiError('unknown');
+  }
+  if (admin.error) throw mapRpcError(admin.error, 'fn_admin_current_caller');
+  const callerId = (admin.data as Record<string, unknown> | null)?.user_id;
+  // The database must see the same user the Auth server confirmed.
+  if (callerId !== user.userId) {
+    safeLog('caller_mismatch', { step: 'admin' });
+    throw new ApiError('unauthenticated');
+  }
+}
+
 function requireId(value: string | undefined): string {
   if (!isUuid(value)) throw new ApiError('invalid_input', 'The id in the path is not valid.');
   return value;
@@ -71,6 +111,7 @@ export async function handleAdminUsers(request: Request, deps: AdminDeps): Promi
 
     const { action, params } = matchRoute(ROUTES, request.method, routePath(new URL(request.url), 'admin-users'));
     const authorization = bearerHeader(request);
+    await verifyAdminCaller(deps, authorization);
 
     const rpc = async (fn: string, args: Record<string, unknown>): Promise<unknown> => {
       const { data, error } = await deps.callerRpc(authorization, fn, args);

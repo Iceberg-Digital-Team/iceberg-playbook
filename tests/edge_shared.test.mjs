@@ -66,7 +66,7 @@ test('every error code maps to its HTTP status', () => {
   const expected = {
     invalid_input: 400, token_invalid: 400, unauthenticated: 401, forbidden: 403, not_found: 404,
     email_in_use: 409, invitation_exists: 409, invalid_status: 409, last_admin: 409, self_action: 409,
-    token_expired: 410, token_used: 410, token_revoked: 410,
+    token_expired: 410, token_used: 410, token_revoked: 410, link_busy: 409, rate_limited: 429,
   };
   for (const [code, status] of Object.entries(expected)) {
     const mapped = errors.mapRpcError({ code: 'P0001', message: code, details: `Detail for ${code}.`, hint: null }, 'fn_x');
@@ -75,6 +75,38 @@ test('every error code maps to its HTTP status', () => {
     assert.equal(mapped.message, `Detail for ${code}.`);
   }
   assert.equal(errors.mapRpcError({ code: 'P0001', message: 'forbidden', details: null }, 'fn_x').message, errors.DEFAULT_MESSAGES.forbidden);
+});
+
+test('rate_limited and link_busy have clear default messages', () => {
+  assert.equal(errors.DEFAULT_MESSAGES.rate_limited, 'Too many attempts. Please wait a few minutes and try again.');
+  assert.equal(errors.DEFAULT_MESSAGES.link_busy, 'This link is being used right now. Please try again in a moment.');
+  assert.equal(new errors.ApiError('rate_limited').status, 429);
+  assert.equal(new errors.ApiError('link_busy').status, 409);
+});
+
+test('rate limit keys are HMAC-SHA-256 hex of "<kind>:<value>" and never contain the value', async () => {
+  const rateLimit = await importTs('supabase/functions/_shared/rateLimit.ts', 'edge-shared-rate-limit');
+  const { createHmac } = await import('node:crypto');
+  const a = await rateLimit.rateLimitKey('secret-a', 'lookup-ip', '203.0.113.7');
+  assert.equal(a, createHmac('sha256', 'secret-a').update('lookup-ip:203.0.113.7').digest('hex'));
+  assert.match(a, /^[0-9a-f]{64}$/);
+  assert.notEqual(a, await rateLimit.rateLimitKey('secret-b', 'lookup-ip', '203.0.113.7'));
+  assert.notEqual(a, await rateLimit.rateLimitKey('secret-a', 'activate-ip', '203.0.113.7'));
+  assert.deepEqual(rateLimit.RATE_LIMITS, {
+    'lookup-ip': { limit: 20, windowSeconds: 600 },
+    'activate-ip': { limit: 10, windowSeconds: 600 },
+    token: { limit: 10, windowSeconds: 3600 },
+  });
+});
+
+test('client IP comes from the platform headers, never the forgeable left-most X-Forwarded-For', async () => {
+  const rateLimit = await importTs('supabase/functions/_shared/rateLimit.ts', 'edge-shared-rate-limit-ip');
+  const ip = headers => rateLimit.clientIp(new Request('https://x.test/', { headers }));
+  assert.equal(ip({ 'cf-connecting-ip': ' 203.0.113.7 ', 'x-forwarded-for': '1.1.1.1' }), '203.0.113.7');
+  assert.equal(ip({ 'x-forwarded-for': '1.1.1.1, 10.0.0.1 , 203.0.113.7' }), '203.0.113.7');
+  assert.equal(ip({ 'x-forwarded-for': '203.0.113.7' }), '203.0.113.7');
+  assert.equal(ip({ 'x-forwarded-for': ' , ' }), 'unknown');
+  assert.equal(ip({}), rateLimit.UNKNOWN_CLIENT_IP);
 });
 
 test('HINT becomes a checked suggestion', () => {

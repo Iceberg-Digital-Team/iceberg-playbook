@@ -13,6 +13,7 @@ const PUBLISHABLE = 'sb_publishable_TEST_VALUE';
 const USER_ID = '11111111-2222-4333-8444-555555555555';
 const INV_ID = '66666666-7777-4888-8999-aaaaaaaaaaaa';
 const EXPIRES = '2026-10-09T10:00:00.000Z';
+const CALLER_ID = 'cccccccc-dddd-4eee-8fff-000000000000';
 
 // Every console line written during this file; checked at the end for secrets.
 const logged = [];
@@ -32,9 +33,19 @@ const linkRow = (over = {}) => ({ invitation_id: INV_ID, purpose: 'invitation', 
 
 function setup(over = {}) {
   const calls = [];
+  // Caller verification (JWT + active Admin) is logged separately so the RPC call lists stay exact.
+  const authCalls = [];
   const deps = {
     keys: { publishableKey: PUBLISHABLE, secretKey: SECRET, source: 'new' },
     allowedOrigins: [ORIGIN],
+    async getAuthUser(jwt) {
+      authCalls.push({ kind: 'getUser', jwt });
+      return over.getUser ? over.getUser(jwt) : { userId: CALLER_ID, error: null };
+    },
+    async checkActiveAdmin(authorization) {
+      authCalls.push({ kind: 'checkAdmin', authorization });
+      return over.checkAdmin ? over.checkAdmin(authorization) : { data: { user_id: CALLER_ID }, error: null };
+    },
     async callerRpc(authorization, fn, args) {
       calls.push({ kind: 'rpc', authorization, fn, args });
       const result = over.rpc?.[fn];
@@ -47,7 +58,7 @@ function setup(over = {}) {
     },
     ...over.deps,
   };
-  return { deps, calls };
+  return { deps, calls, authCalls };
 }
 
 async function call(deps, method, path, { body, headers = {}, auth = AUTH, origin = ORIGIN } = {}) {
@@ -305,6 +316,76 @@ test('unban failure rolls enable back', async () => {
   assert.match(res.body.error.message, /still disabled/);
   assert.deepEqual(calls.map(c => c.kind === 'rpc' ? c.fn : 'ban'), ['fn_admin_enable_user', 'ban', 'fn_admin_disable_user']);
   assert.ok(logged.some(line => line.includes('auth_sync_failed step=unban')));
+});
+
+test('caller check: the JWT is verified with Supabase Auth and the active Admin role before any admin RPC', async () => {
+  const { deps, calls, authCalls } = setup({
+    rpc: { fn_admin_list_users: { data: { users: [], invitations: [] }, error: null } },
+  });
+  const res = await call(deps, 'GET', '/users');
+  assert.equal(res.status, 200);
+  assert.deepEqual(authCalls, [
+    { kind: 'getUser', jwt: 'caller.jwt.value' },
+    { kind: 'checkAdmin', authorization: AUTH },
+  ]);
+  assert.deepEqual(calls.map(c => c.fn), ['fn_admin_list_users']);
+});
+
+test('caller check: missing Authorization -> 401 without Auth or RPC call', async () => {
+  const { deps, calls, authCalls } = setup();
+  const res = await call(deps, 'POST', `/users/${USER_ID}/disable`, { auth: null });
+  assert.equal(res.status, 401);
+  assert.equal(authCalls.length + calls.length, 0);
+});
+
+test('caller check: JWT rejected by Supabase Auth -> 401 unauthenticated, no admin check, no RPC', async () => {
+  for (const getUser of [
+    () => ({ userId: null, error: { message: 'invalid JWT', code: 'bad_jwt', status: 401 } }),
+    () => ({ userId: null, error: { message: 'User from sub claim in JWT does not exist', status: 403 } }),
+    () => ({ userId: null, error: null }),
+  ]) {
+    const { deps, calls, authCalls } = setup({ getUser });
+    const res = await call(deps, 'POST', `/users/${USER_ID}/disable`);
+    assert.equal(res.status, 401);
+    assert.equal(res.body.error.code, 'unauthenticated');
+    assert.deepEqual(authCalls.map(c => c.kind), ['getUser']);
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('caller check: not an active Admin -> 403 forbidden, no RPC, no ban', async () => {
+  const forbidden = { data: null, error: { code: 'P0001', message: 'forbidden', details: 'Permission denied. Only active Admins can manage users.', hint: null } };
+  const { deps, calls } = setup({ checkAdmin: () => forbidden });
+  const res = await call(deps, 'POST', `/users/${USER_ID}/disable`);
+  assert.equal(res.status, 403);
+  assert.equal(res.body.error.code, 'forbidden');
+  assert.equal(calls.length, 0);
+});
+
+test('caller check: database says unauthenticated -> 401; other user id -> 401', async () => {
+  const unauth = setup({ checkAdmin: () => ({ data: null, error: { code: 'P0001', message: 'unauthenticated', details: null, hint: null } }) });
+  assert.equal((await call(unauth.deps, 'GET', '/users')).status, 401);
+  const mismatch = setup({ checkAdmin: () => ({ data: { user_id: USER_ID }, error: null }) });
+  const res = await call(mismatch.deps, 'GET', '/users');
+  assert.equal(res.status, 401);
+  assert.equal(unauth.calls.length + mismatch.calls.length, 0);
+  assert.ok(logged.some(line => line.includes('caller_mismatch step=admin')));
+});
+
+test('caller check: Auth server or database unreachable -> 500 unknown, no RPC', async () => {
+  for (const over of [
+    { getUser: () => { throw new Error('network'); } },
+    { getUser: () => ({ userId: null, error: { message: 'fetch failed', status: 0 } }) },
+    { getUser: () => ({ userId: null, error: { message: 'bad gateway', status: 502 } }) },
+    { checkAdmin: () => { throw new Error('network'); } },
+    { checkAdmin: () => ({ data: null, error: { code: '08006', message: 'connection failure' } }) },
+  ]) {
+    const { deps, calls } = setup(over);
+    const res = await call(deps, 'GET', '/users');
+    assert.equal(res.status, 500);
+    assert.equal(res.body.error.code, 'unknown');
+    assert.equal(calls.length, 0);
+  }
 });
 
 test('responses never contain token_hash or keys; logs never contain tokens, hashes or keys', () => {

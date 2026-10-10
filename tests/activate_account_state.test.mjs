@@ -46,6 +46,20 @@ test('submit errors: dead link -> dead state; others stay on the form with a mes
   assert.equal(stay.email, form.email);
 });
 
+test('link_busy and rate_limited keep the link usable: form stays / lookup can be retried', () => {
+  const form = viewFromInfo(info('password_reset'));
+  for (const code of ['link_busy', 'rate_limited']) {
+    const stay = viewFromSubmitError(form, new AdminUserError(code));
+    assert.equal(stay.kind, 'form', code);
+    assert.equal(stay.error, new AdminUserError(code).message);
+  }
+  assert.deepEqual(viewFromLookupError(new AdminUserError('rate_limited')),
+    { kind: 'error', message: 'Too many attempts. Please wait a few minutes and try again.' });
+  // A password rejected by the Supabase policy: the form stays so the user can choose another one.
+  const weak = viewFromSubmitError(form, new AdminUserError('invalid_input', 'This password does not meet the password policy. Choose a stronger password.'));
+  assert.equal(weak.kind, 'form');
+});
+
 test('success -> done with the sign-in text', () => {
   assert.deepEqual(viewFromResult({ purpose: 'invitation', email: 'new@example.test' }), {
     kind: 'done', message: 'Your password is set. Sign in with your email and new password.', email: 'new@example.test',

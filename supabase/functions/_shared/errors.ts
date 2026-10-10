@@ -1,4 +1,4 @@
-// Error format and mapping of database errors (convention of migration 11:
+// Error format and mapping of database errors (convention of migration 12:
 // ERRCODE 'P0001', MESSAGE = code, DETAIL = English text, HINT = suggestion JSON).
 import { safeLog } from './log.ts';
 import type { AdminSuggestion, RpcError } from './types.ts';
@@ -17,6 +17,8 @@ export type ApiErrorCode =
   | 'token_expired'
   | 'token_used'
   | 'token_revoked'
+  | 'rate_limited'
+  | 'link_busy'
   | 'unknown';
 
 export const ERROR_STATUS: Record<ApiErrorCode, number> = {
@@ -33,6 +35,8 @@ export const ERROR_STATUS: Record<ApiErrorCode, number> = {
   token_expired: 410,
   token_used: 410,
   token_revoked: 410,
+  rate_limited: 429,
+  link_busy: 409,
   unknown: 500,
 };
 
@@ -51,6 +55,8 @@ export const DEFAULT_MESSAGES: Record<ApiErrorCode, string> = {
   token_expired: 'This link has expired. Ask your Admin for a new link.',
   token_used: 'This link has already been used. Ask your Admin for a new link if needed.',
   token_revoked: 'This link has been revoked. Ask your Admin for a new link.',
+  rate_limited: 'Too many attempts. Please wait a few minutes and try again.',
+  link_busy: 'This link is being used right now. Please try again in a moment.',
   unknown: 'Something went wrong. Please try again.',
 };
 
