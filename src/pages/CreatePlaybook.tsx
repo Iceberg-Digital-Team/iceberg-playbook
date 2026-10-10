@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, MessageSquare, Briefcase, Home, Video, Mic, Globe } from 'lucide-react';
 import { useRouter } from '../router';
-import { createPlaybook } from '../services/playbookService';
+import {
+  createPlaybook,
+  checkPlaybookConflict,
+  restorePlaybook,
+  type DeletedPlaybookConflict,
+} from '../services/playbookService';
 import { PageHeader, FormSection } from '../components/knowledge/ApplicationUI';
 import { toSlug } from '../slug';
 
@@ -14,6 +19,68 @@ const icons = [
   { name: 'Globe', icon: Globe, label: 'Web Systems' },
 ];
 
+function RestorePlaybookDialog({
+  playbook,
+  busy,
+  onCancel,
+  onRestore,
+}: {
+  playbook: DeletedPlaybookConflict;
+  busy: boolean;
+  onCancel: () => void;
+  onRestore: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      el.showModal();
+    }
+    return () => {
+      if (el?.open) el.close();
+    };
+  }, []);
+
+  return (
+    <dialog
+      className="guide-restore-dialog"
+      ref={ref}
+      aria-labelledby="restore-title"
+      onCancel={e => {
+        e.preventDefault();
+        if (!busy) onCancel();
+      }}
+    >
+      <h2 id="restore-title">Restore Playbook?</h2>
+      <p>A deleted Playbook with this name or code already exists. Would you like to restore it instead?</p>
+      <div
+        style={{
+          margin: '16px 0',
+          padding: '12px 16px',
+          background: 'var(--muted-bg, #f4f5f7)',
+          borderRadius: 'var(--radius, 6px)',
+          border: '1px solid var(--border)',
+        }}
+      >
+        <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--primary-text)' }}>
+          {playbook.name}
+        </div>
+        <div style={{ fontSize: '13px', color: 'var(--secondary-text)', marginTop: '4px' }}>
+          Code Prefix: <strong>{playbook.code}</strong>
+        </div>
+      </div>
+      <div className="knowledge-actions">
+        <button autoFocus type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button type="button" className="btn-primary" onClick={onRestore} disabled={busy}>
+          {busy ? 'Restoring…' : 'Restore Playbook'}
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
 export function CreatePlaybook() {
   const { navigate } = useRouter();
   const [name, setName] = useState('');
@@ -24,10 +91,12 @@ export function CreatePlaybook() {
   const [visibility, setVisibility] = useState<'Internal' | 'Public'>('Internal');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [conflictPlaybook, setConflictPlaybook] = useState<DeletedPlaybookConflict | null>(null);
+  const [restoreBusy, setRestoreBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy) return;
+    if (busy || restoreBusy) return;
     setError('');
 
     const slug = toSlug(name);
@@ -38,6 +107,20 @@ export function CreatePlaybook() {
 
     setBusy(true);
     try {
+      // Differentiate active vs soft-deleted conflict
+      const conflict = await checkPlaybookConflict({ name, code, slug });
+      if (conflict.type === 'ACTIVE_CONFLICT') {
+        setError(conflict.message);
+        setBusy(false);
+        return;
+      }
+
+      if (conflict.type === 'DELETED_CONFLICT') {
+        setConflictPlaybook(conflict.playbook);
+        setBusy(false);
+        return;
+      }
+
       await createPlaybook({
         name,
         code,
@@ -53,6 +136,26 @@ export function CreatePlaybook() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleRestore = async () => {
+    if (!conflictPlaybook || restoreBusy) return;
+    setRestoreBusy(true);
+    setError('');
+    try {
+      const restored = await restorePlaybook(conflictPlaybook.id);
+      setConflictPlaybook(null);
+      navigate(`/playbooks/${restored.slug}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not restore Playbook.');
+      setConflictPlaybook(null);
+    } finally {
+      setRestoreBusy(false);
+    }
+  };
+
+  const handleCancelRestore = () => {
+    setConflictPlaybook(null);
   };
 
   return (
@@ -71,7 +174,7 @@ export function CreatePlaybook() {
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. WhatsApp"
-                disabled={busy}
+                disabled={busy || restoreBusy}
               />
             </label>
             <label>
@@ -83,7 +186,7 @@ export function CreatePlaybook() {
                 value={code}
                 onChange={e => setCode(e.target.value)}
                 placeholder="e.g. WA"
-                disabled={busy}
+                disabled={busy || restoreBusy}
               />
             </label>
           </div>
@@ -94,7 +197,7 @@ export function CreatePlaybook() {
               rows={3}
               value={description}
               onChange={e => setDescription(e.target.value)}
-              disabled={busy}
+              disabled={busy || restoreBusy}
             />
           </label>
           <p className="helper-text">
@@ -109,7 +212,7 @@ export function CreatePlaybook() {
                 key={iconName}
                 aria-pressed={icon === iconName}
                 onClick={() => setIcon(iconName)}
-                disabled={busy}
+                disabled={busy || restoreBusy}
               >
                 <Icon size={19} />
                 {label}
@@ -123,7 +226,7 @@ export function CreatePlaybook() {
             <input
               value={owner}
               onChange={e => setOwner(e.target.value)}
-              disabled={busy}
+              disabled={busy || restoreBusy}
             />
           </label>
           <label>
@@ -131,7 +234,7 @@ export function CreatePlaybook() {
             <select
               value={visibility}
               onChange={e => setVisibility(e.target.value as 'Internal' | 'Public')}
-              disabled={busy}
+              disabled={busy || restoreBusy}
             >
               <option value="Internal">Internal (Support Only)</option>
               <option value="Public">Public (All Departments)</option>
@@ -143,14 +246,23 @@ export function CreatePlaybook() {
         </FormSection>
         {error && <p className="knowledge-error" role="alert">{error}</p>}
         <div className="form-actions">
-          <a className="btn-secondary" href="#/create" aria-disabled={busy || undefined}>
+          <a className="btn-secondary" href="#/create" aria-disabled={busy || restoreBusy || undefined}>
             Cancel
           </a>
-          <button className="btn-primary" type="submit" disabled={busy}>
+          <button className="btn-primary" type="submit" disabled={busy || restoreBusy}>
             {busy ? 'Creating…' : 'Create Playbook'}
           </button>
         </div>
       </form>
+
+      {conflictPlaybook && (
+        <RestorePlaybookDialog
+          playbook={conflictPlaybook}
+          busy={restoreBusy}
+          onCancel={handleCancelRestore}
+          onRestore={handleRestore}
+        />
+      )}
     </div>
   );
 }
