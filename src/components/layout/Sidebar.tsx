@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Home, BookOpen, Plus, Settings, X, LogOut } from 'lucide-react';
+import { Home, BookOpen, Plus, Settings, X, LogOut, Users } from 'lucide-react';
 import { useRouter } from '../../router';
 import './Sidebar.css';
 import { useAuth } from '../../auth/AuthProvider';
+import { canOpenAdminUsers } from '../../appAccess';
 export function Sidebar({isOpen,onClose}:{isOpen:boolean;onClose:()=>void}) {
  const {session,signOut}=useAuth(); const [logoutError,setLogoutError]=useState('');
  const displayName=session?.profile?.full_name||session?.user.email||'';
@@ -14,7 +15,8 @@ export function Sidebar({isOpen,onClose}:{isOpen:boolean;onClose:()=>void}) {
   const media=window.matchMedia('(min-width:769px)'); const resize=()=>{if(media.matches)onClose();};
   document.addEventListener('keydown',key);media.addEventListener('change',resize);return()=>{document.removeEventListener('keydown',key);media.removeEventListener('change',resize);previous?.focus();};
  },[isOpen,onClose]);
- const nav=[{name:'Home',url:'/',icon:Home,active:path==='/'},{name:'Playbooks',url:'/playbooks',icon:BookOpen,active:path.startsWith('/playbooks')||path.startsWith('/guides')},{name:'Create',url:'/create',icon:Plus,active:path.startsWith('/create')}];
+ const nav=[{name:'Home',url:'/',icon:Home,active:path==='/'},{name:'Playbooks',url:'/playbooks',icon:BookOpen,active:path.startsWith('/playbooks')||path.startsWith('/guides')},{name:'Create',url:'/create',icon:Plus,active:path.startsWith('/create')},
+  ...(canOpenAdminUsers(session?.profile)?[{name:'Users',url:'/admin/users',icon:Users,active:path==='/admin/users'}]:[])];
  return <>{isOpen&&<div className="sidebar-overlay" onClick={onClose} aria-hidden="true"/>}<aside ref={ref} id="sidebar-navigation" className={`sidebar ${isOpen?'open':''}`} role={isOpen?'dialog':undefined} aria-modal={isOpen||undefined} aria-label="Main navigation"><button className="sidebar-close" onClick={onClose} aria-label="Close navigation"><X size={20}/></button>
  <div className="sidebar-logo-section"><a href="#/" onClick={onClose} className="logo-wrapper" aria-label="Iceberg Playbook Home"><img src="/playbooklogo.png" alt="Iceberg Playbook" className="sidebar-logo" /></a></div>
  <nav className="sidebar-nav">{nav.map(({name,url,icon:Icon,active})=><a key={url} href={`#${url}`} onClick={onClose} aria-current={active?'page':undefined} className={`nav-item ${active?'active':''}`}><Icon className="nav-item-icon"/><span>{name}</span></a>)}</nav>

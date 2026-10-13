@@ -17,6 +17,9 @@ import { CreateGuide } from './pages/CreateGuide';
 import { CreateSOP } from './pages/CreateSOP';
 import { CreatePlaybook } from './pages/CreatePlaybook';
 import { Settings } from './pages/Settings';
+import { AdminUsers } from './pages/AdminUsers';
+import { ActivateAccount } from './pages/ActivateAccount';
+import { decideEntry } from './appAccess';
 
 import { ContentErrorBoundary } from './components/knowledge/ContentErrorBoundary';
 import './product.css';
@@ -26,17 +29,18 @@ import { LoginPage, ForgotPasswordPage } from './pages/LoginPage';
 function App() {
   const { session, loading } = useAuth();
   const { path } = useRouter();
-  const isAuthPage = path === '/login' || path === '/forgot-password';
+  // #/activate works signed in and signed out; other pages need a session.
+  const entry = decideEntry(path, Boolean(session));
 
   useEffect(() => {
     if (loading) return;
-    if (!session && !isAuthPage) window.location.replace('#/login');
-    else if (session && isAuthPage) window.location.replace('#/');
-  }, [session, isAuthPage, loading]);
+    if (entry.redirect) window.location.replace(entry.redirect);
+  }, [entry.redirect, loading]);
 
   if (loading) return null;
 
-  if (!session) return path === '/forgot-password' ? <ForgotPasswordPage/> : <LoginPage/>;
+  if (entry.view === 'activate') return <ActivateAccount/>;
+  if (!session) return entry.view === 'forgot-password' ? <ForgotPasswordPage/> : <LoginPage/>;
   return <WorkspaceApp/>;
 }
 
@@ -85,6 +89,8 @@ function WorkspaceApp() {
         return <CreatePlaybook />;
       case '/settings':
         return <Settings />;
+      case '/admin/users':
+        return <AdminUsers />;
       default:
         return <Home onSearchTrigger={setSearchQuery} />;
     }
