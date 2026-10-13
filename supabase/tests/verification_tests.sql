@@ -15,8 +15,9 @@ DECLARE
     v_temp_id TEXT;
     v_guide_res JSONB;
     v_err_msg TEXT;
-    v_test_pb_id TEXT := 'test-pb-iso';
-    v_test_issue_id TEXT := 'TEST-001';
+    v_test_code TEXT;
+    v_test_pb_id TEXT;
+    v_test_issue_id TEXT;
     v_test_guide_id TEXT;
 BEGIN
     RAISE NOTICE '=== STARTING ICEBERG PLAYBOOK V2 ISOLATED VERIFICATION TEST SUITE ===';
@@ -24,8 +25,19 @@ BEGIN
     -- --------------------------------------------------------------------------
     -- PREPARATION: Create Dedicated Isolated Test Playbook & Issue
     -- --------------------------------------------------------------------------
+    -- Runtime-generated isolated test code (e.g. T1000 - T9999) to prevent collision with existing data
+    LOOP
+        v_test_code := 'T' || (1000 + FLOOR(RANDOM() * 9000)::INTEGER)::TEXT;
+        EXIT WHEN NOT EXISTS (
+            SELECT 1 FROM public.playbooks
+            WHERE code = v_test_code OR slug = 'test-pb-' || lower(v_test_code) OR id = 'test-pb-' || lower(v_test_code)
+        );
+    END LOOP;
+    v_test_pb_id := 'test-pb-' || lower(v_test_code);
+    v_test_issue_id := v_test_code || '-001';
+
     INSERT INTO public.playbooks (id, slug, name, code, description, owner, visibility)
-    VALUES (v_test_pb_id, v_test_pb_id, 'Isolation Test Playbook', 'TEST', 'Test playbook for isolated verification', 'Support Team', 'Internal');
+    VALUES (v_test_pb_id, v_test_pb_id, 'Isolation Test Playbook ' || v_test_code, v_test_code, 'Test playbook for isolated verification', 'Support Team', 'Internal');
 
     INSERT INTO public.issues (id, playbook_id, title, summary, status, difficulty, estimated_time, author)
     VALUES (v_test_issue_id, v_test_pb_id, 'Test Issue for Verification', 'Isolated issue description', 'Verified', 'Medium', '10 min', 'Test Runner');
@@ -35,7 +47,7 @@ BEGIN
     -- --------------------------------------------------------------------------
     BEGIN
         INSERT INTO public.playbooks (id, slug, name, code, description)
-        VALUES ('bad-pb', 'bad-pb', 'Bad PB', 'A-1', 'Desc');
+        VALUES ('bad-pb-' || lower(v_test_code), 'bad-pb-' || lower(v_test_code), 'Bad PB ' || v_test_code, 'A-1', 'Desc');
         RAISE EXCEPTION 'TEST 1 FAILED: Invalid playbook code was accepted!';
     EXCEPTION WHEN check_violation THEN
         v_test_pass_count := v_test_pass_count + 1;
@@ -46,7 +58,7 @@ BEGIN
     -- TEST 2: Atomic Code Generation
     -- --------------------------------------------------------------------------
     v_temp_id := public.fn_generate_issue_code(v_test_pb_id);
-    IF v_temp_id ~ '^TEST-[0-9]{3}$' THEN
+    IF v_temp_id ~ ('^' || v_test_code || '-[0-9]{3}$') THEN
         v_test_pass_count := v_test_pass_count + 1;
         RAISE NOTICE 'Test 2 Passed: Issue code generation matches format (generated: %)', v_temp_id;
     ELSE
@@ -72,7 +84,7 @@ BEGIN
     );
 
     v_test_guide_id := v_guide_res->>'id';
-    IF v_test_guide_id ~ '^TEST-G[0-9]{2}$' AND v_guide_res->>'current_version_id' = (v_test_guide_id || ':v1') THEN
+    IF v_test_guide_id ~ ('^' || v_test_code || '-G[0-9]{2}$') AND v_guide_res->>'current_version_id' = (v_test_guide_id || ':v1') THEN
         v_test_pass_count := v_test_pass_count + 1;
         RAISE NOTICE 'Test 3 Passed: Guide created atomically with v1 snapshot (id: %)', v_test_guide_id;
     ELSE
