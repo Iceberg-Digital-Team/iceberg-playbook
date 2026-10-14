@@ -92,7 +92,16 @@ function SOPEditor({ initial }: { initial?: SOP }) {
   );
   const [steps, setSteps] = useState<Omit<Step, 'number'>[]>(
     initial?.steps?.length
-      ? initial.steps.map(s => ({ title: s.title, description: s.description }))
+      ? initial.steps.map(s => ({
+          title: s.title,
+          description: s.description,
+          ...(s.estimatedTime?.trim() ? { estimatedTime: s.estimatedTime.trim() } : {}),
+          ...(s.screenshot?.trim() ? { screenshot: s.screenshot.trim() } : {}),
+          ...(s.importantNote?.trim() ? { importantNote: s.importantNote.trim() } : {}),
+          ...(s.successIndicator?.trim() ? { successIndicator: s.successIndicator.trim() } : {}),
+          ...(s.videoLink?.trim() ? { videoLink: s.videoLink.trim() } : {}),
+          ...(s.pdfReference?.trim() ? { pdfReference: s.pdfReference.trim() } : {})
+        }))
       : [{ title: '', description: '' }]
   );
   const [escalation, setEscalation] = useState(initial?.escalationRules || '');
@@ -141,9 +150,29 @@ function SOPEditor({ initial }: { initial?: SOP }) {
             JSON.stringify((initial.requirements || []).filter(r => r.trim())) ||
           JSON.stringify(checklist.filter(c => c.trim())) !==
             JSON.stringify((initial.checklist || []).filter(c => c.trim())) ||
-          JSON.stringify(steps.map(s => ({ title: s.title.trim(), description: s.description.trim() }))) !==
+          JSON.stringify(
+            steps.map(s => ({
+              title: s.title.trim(),
+              description: s.description.trim(),
+              estimatedTime: s.estimatedTime?.trim() || '',
+              screenshot: s.screenshot?.trim() || '',
+              importantNote: s.importantNote?.trim() || '',
+              successIndicator: s.successIndicator?.trim() || '',
+              videoLink: s.videoLink?.trim() || '',
+              pdfReference: s.pdfReference?.trim() || ''
+            }))
+          ) !==
             JSON.stringify(
-              (initial.steps || []).map(s => ({ title: s.title.trim(), description: s.description.trim() }))
+              (initial.steps || []).map(s => ({
+                title: s.title.trim(),
+                description: s.description.trim(),
+                estimatedTime: s.estimatedTime?.trim() || '',
+                screenshot: s.screenshot?.trim() || '',
+                importantNote: s.importantNote?.trim() || '',
+                successIndicator: s.successIndicator?.trim() || '',
+                videoLink: s.videoLink?.trim() || '',
+                pdfReference: s.pdfReference?.trim() || ''
+              }))
             )
       )
     : Boolean(
@@ -157,7 +186,17 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           time !== '30 min' ||
           team !== 'Support & Onboarding Team' ||
           requirements.some(r => r.trim() !== '') ||
-          steps.some(s => s.title.trim() !== '' || s.description.trim() !== '') ||
+          steps.some(
+            s =>
+              s.title.trim() !== '' ||
+              s.description.trim() !== '' ||
+              Boolean(s.screenshot?.trim()) ||
+              Boolean(s.importantNote?.trim()) ||
+              Boolean(s.successIndicator?.trim()) ||
+              Boolean(s.videoLink?.trim()) ||
+              Boolean(s.pdfReference?.trim()) ||
+              Boolean(s.estimatedTime?.trim())
+          ) ||
           JSON.stringify(checklist) !== JSON.stringify(defaultSopChecklist) ||
           (defaultPlaybookId && playbookId !== defaultPlaybookId)
       );
@@ -198,6 +237,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           responsibleTeam: team.trim() || 'Support & Onboarding Team',
           checklist: checklist.filter(s => s.trim()),
           steps: steps.map((s, i) => ({
+            ...s,
             number: i + 1,
             title: s.title.trim(),
             description: s.description.trim()
@@ -224,6 +264,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           responsibleTeam: team.trim() || 'Support & Onboarding Team',
           checklist: checklist.filter(s => s.trim()),
           steps: steps.map((s, i) => ({
+            ...s,
             number: i + 1,
             title: s.title.trim(),
             description: s.description.trim()
@@ -359,7 +400,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
         </FormSection>
 
         <FormSection title="Process Steps">
-          <StepEditor steps={steps} onChange={setSteps} />
+          <StepEditor steps={steps} initialSteps={initial?.steps} onChange={setSteps} />
         </FormSection>
 
         <FormSection title="Escalation Rules" optional>

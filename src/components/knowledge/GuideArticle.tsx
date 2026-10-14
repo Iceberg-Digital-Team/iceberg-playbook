@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Guide, Playbook, Issue, Step } from '../../data';
 import { formatGuideDate } from '../../data';
 import { guideChecklist } from '../../guideTemplate';
-import { getSignedMediaUrl, getSignedMediaUrls, isStorageKey } from '../../services/mediaService';
+import { getSignedMediaUrl, isStorageKey, resolveStepMedia } from '../../services/mediaService';
 import { ArticleHeader, SummarySection, ChecklistSection, ImportantInfoSection, StepsSection, CommonProblemsAccordion, InternalNotes, VideoSection, PDFSection } from '../article/ArticleComponents';
 import './Knowledge.css';
 
@@ -54,27 +54,13 @@ export function GuideArticle({
         if (active) setResolvedPdfUrl(guide.pdf);
       }
 
-      // 3. Step Screenshots
-      const screenshotKeys = (guide.steps || [])
-        .map(s => s.screenshot)
-        .filter((s): s is string => Boolean(s && isStorageKey(s)));
-
-      if (screenshotKeys.length > 0) {
-        try {
-          const map = await getSignedMediaUrls(screenshotKeys);
-          if (active) {
-            setResolvedSteps(
-              guide.steps.map(s => ({
-                ...s,
-                screenshot: s.screenshot && map.has(s.screenshot) ? map.get(s.screenshot)! : s.screenshot
-              }))
-            );
-          }
-        } catch (e) {
-          console.warn('Could not load signed screenshot URLs:', e);
-        }
-      } else {
-        if (active) setResolvedSteps(guide.steps);
+      // 3. Step Media (screenshots, videos, pdf references)
+      try {
+        const resolved = await resolveStepMedia(guide.steps || []);
+        if (active) setResolvedSteps(resolved);
+      } catch (e) {
+        console.warn('Could not load signed step media URLs:', e);
+        if (active) setResolvedSteps(guide.steps || []);
       }
     }
 

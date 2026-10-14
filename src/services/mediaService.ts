@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../lib/supabase';
+import type { Step, SOP } from '../data';
 
 export const BUCKET_NAME = 'support-assets';
 export const MAX_FILE_SIZE_BYTES = 52428800; // 50 MB
@@ -258,4 +259,64 @@ export async function removeMedia(
   if (error) {
     throw new Error(`Failed to remove media: ${error.message}`);
   }
+}
+
+export async function resolveStepMedia(
+  steps: Step[],
+  client: SupabaseClient = defaultSupabase
+): Promise<Step[]> {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return [];
+  }
+
+  const keysToResolve = new Set<string>();
+
+  for (const step of steps) {
+    if (step.screenshot && isStorageKey(step.screenshot)) {
+      keysToResolve.add(step.screenshot.trim());
+    }
+    if (step.videoLink && isStorageKey(step.videoLink)) {
+      keysToResolve.add(step.videoLink.trim());
+    }
+    if (step.pdfReference && isStorageKey(step.pdfReference)) {
+      keysToResolve.add(step.pdfReference.trim());
+    }
+  }
+
+  if (keysToResolve.size === 0) {
+    return steps;
+  }
+
+  const signedUrls = await getSignedMediaUrls(Array.from(keysToResolve), 3600, client);
+
+  return steps.map(step => {
+    const screenshotKey = step.screenshot?.trim();
+    const videoKey = step.videoLink?.trim();
+    const pdfKey = step.pdfReference?.trim();
+
+    return {
+      ...step,
+      screenshot: screenshotKey && signedUrls.has(screenshotKey)
+        ? signedUrls.get(screenshotKey)!
+        : step.screenshot,
+      videoLink: videoKey && signedUrls.has(videoKey)
+        ? signedUrls.get(videoKey)!
+        : step.videoLink,
+      pdfReference: pdfKey && signedUrls.has(pdfKey)
+        ? signedUrls.get(pdfKey)!
+        : step.pdfReference
+    };
+  });
+}
+
+export async function resolveSopMedia(
+  sop: SOP,
+  client: SupabaseClient = defaultSupabase
+): Promise<SOP> {
+  if (!sop) return sop;
+  const resolvedSteps = await resolveStepMedia(sop.steps || [], client);
+  return {
+    ...sop,
+    steps: resolvedSteps
+  };
 }

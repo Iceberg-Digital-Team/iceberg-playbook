@@ -141,6 +141,48 @@ export async function getSopById(
   return data ? mapSopRowToSop(data) : null;
 }
 
+export { resolveStepMedia, resolveSopMedia } from './mediaService';
+
+export function formatSopStep(s: Step | Omit<Step, 'number'>, index: number): Step {
+  const step: Step = {
+    number: typeof (s as Step).number === 'number' && (s as Step).number > 0 ? (s as Step).number : index + 1,
+    title: s.title?.trim() || '',
+    description: s.description?.trim() || ''
+  };
+
+  const estimatedTime = s.estimatedTime?.trim();
+  if (estimatedTime) {
+    step.estimatedTime = estimatedTime;
+  }
+
+  const screenshot = s.screenshot?.trim();
+  if (screenshot) {
+    step.screenshot = screenshot;
+  }
+
+  const importantNote = s.importantNote?.trim();
+  if (importantNote) {
+    step.importantNote = importantNote;
+  }
+
+  const successIndicator = s.successIndicator?.trim();
+  if (successIndicator) {
+    step.successIndicator = successIndicator;
+  }
+
+  const videoLink = s.videoLink?.trim();
+  if (videoLink) {
+    step.videoLink = videoLink;
+  }
+
+  const pdfReference = s.pdfReference?.trim();
+  if (pdfReference) {
+    step.pdfReference = pdfReference;
+  }
+
+  return step;
+}
+
 export async function createSop(
   input: CreateSopInput,
   client: SupabaseClient = defaultSupabase
@@ -174,11 +216,7 @@ export async function createSop(
 
   const sopId = String(codeData);
 
-  const formattedSteps = (input.steps || []).map((s, i) => ({
-    number: i + 1,
-    title: s.title?.trim() || '',
-    description: s.description?.trim() || ''
-  }));
+  const formattedSteps = (input.steps || []).map((s, i) => formatSopStep(s, i));
 
   const initialRevision: Revision = {
     version: '1.0.0',
@@ -268,11 +306,7 @@ export async function updateSop(
     throw new Error('Provide when to use this SOP.');
   }
 
-  const formattedSteps = (input.steps || []).map((s, i) => ({
-    number: i + 1,
-    title: s.title?.trim() || '',
-    description: s.description?.trim() || ''
-  }));
+  const formattedSteps = (input.steps || []).map((s, i) => formatSopStep(s, i));
 
   const updatePayload: Record<string, unknown> = {
     title: trimmedTitle,
