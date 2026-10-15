@@ -125,3 +125,79 @@ test('all SOPs define complete portable fields without vendor-specific UUIDs', (
     }
   }
 });
+
+test('Migration 17 defines public.sops.bootstrap_key with format constraint and partial unique index', () => {
+  const m17Path = join(rootDir, 'supabase', 'migrations', '17_sop_bootstrap_key.sql');
+  assert.ok(existsSync(m17Path), '17_sop_bootstrap_key.sql must exist');
+
+  const sql = readFileSync(m17Path, 'utf8');
+
+  // Verify header and mode
+  assert.ok(sql.includes('Mode: PROPOSED'), 'Migration 17 must be marked as PROPOSED');
+  assert.ok(sql.includes('ICEBERG PLAYBOOK SUPABASE V2 MIGRATIONS'), 'Must have standardized V2 header');
+
+  // Verify column declaration
+  assert.ok(
+    sql.includes('ALTER TABLE public.sops') && sql.includes('ADD COLUMN IF NOT EXISTS bootstrap_key TEXT DEFAULT NULL;'),
+    'Must add nullable bootstrap_key column with NULL default'
+  );
+
+  // Verify check constraint
+  assert.ok(sql.includes('chk_sop_bootstrap_key_format'), 'Must declare chk_sop_bootstrap_key_format constraint');
+  assert.ok(
+    sql.includes("conrelid = 'public.sops'::regclass"),
+    'Constraint existence check must be scoped to public.sops::regclass'
+  );
+  assert.ok(
+    sql.includes("bootstrap_key ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'"),
+    'Must enforce kebab-case logical key regex'
+  );
+
+  // Verify partial unique index scoped to playbook_id
+  assert.ok(sql.includes('CREATE UNIQUE INDEX IF NOT EXISTS uq_sops_playbook_bootstrap_key'), 'Must declare unique index');
+  assert.ok(
+    sql.includes('ON public.sops (playbook_id, bootstrap_key)'),
+    'Index must be scoped to (playbook_id, bootstrap_key)'
+  );
+  assert.ok(
+    sql.includes('WHERE bootstrap_key IS NOT NULL;'),
+    'Index must be partial (WHERE bootstrap_key IS NOT NULL)'
+  );
+
+  // Invariants: No hard deletes or drops
+  assert.ok(!sql.includes('DROP TABLE'), 'Must not contain DROP statements');
+  assert.ok(!sql.includes('DELETE FROM'), 'Must not contain DELETE statements');
+  assert.ok(!sql.includes('TRUNCATE'), 'Must not contain TRUNCATE statements');
+});
+
+test('logical-key format constraint validates kebab-case rules and accepts all bundle keys', () => {
+  const kebabRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+  // Valid keys
+  assert.ok(kebabRegex.test('how-to-use-playbooks'));
+  assert.ok(kebabRegex.test('how-to-use-issues'));
+  assert.ok(kebabRegex.test('how-to-use-guides'));
+  assert.ok(kebabRegex.test('how-to-use-sops'));
+  assert.ok(kebabRegex.test('how-to-use-users'));
+  assert.ok(kebabRegex.test('getting-started'));
+  assert.ok(kebabRegex.test('sop1'));
+
+  // Invalid keys
+  assert.equal(kebabRegex.test('How-To-Use'), false, 'Uppercase letters not allowed');
+  assert.equal(kebabRegex.test('has_underscore'), false, 'Underscores not allowed');
+  assert.equal(kebabRegex.test('-leading-dash'), false, 'Leading dashes not allowed');
+  assert.equal(kebabRegex.test('trailing-dash-'), false, 'Trailing dashes not allowed');
+  assert.equal(kebabRegex.test('double--dash'), false, 'Double dashes not allowed');
+  assert.equal(kebabRegex.test('spaces inside'), false, 'Spaces not allowed');
+  assert.equal(kebabRegex.test(''), false, 'Empty string not allowed');
+
+  // Verify all keys in default-content.json pass
+  const content = JSON.parse(readFileSync(jsonPath, 'utf8'));
+  for (const pb of content.playbooks) {
+    assert.ok(kebabRegex.test(pb.key), `Playbook key "${pb.key}" must satisfy kebab-case format`);
+  }
+  for (const sop of content.sops) {
+    assert.ok(kebabRegex.test(sop.key), `SOP key "${sop.key}" must satisfy kebab-case format`);
+  }
+});
+
