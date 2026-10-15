@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "bootstrap:content": "node scripts/bootstrap_content.mjs",
     "storage:audit-orphans": "node scripts/prune_orphan_media.mjs",
     "test": "node --test tests/*.test.mjs"
   },
