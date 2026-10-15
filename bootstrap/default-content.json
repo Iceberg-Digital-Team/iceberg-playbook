@@ -1,0 +1,308 @@
+{
+  "$schema": "./default-content.schema.json",
+  "version": "1.0.0",
+  "description": "Canonical vendor-neutral onboarding and bootstrap package for Iceberg Playbook.",
+  "playbooks": [
+    {
+      "key": "getting-started",
+      "name": "Getting Started",
+      "code": "GS",
+      "description": "Canonical onboarding procedures and baseline operational workflows for the Iceberg Support Playbook system.",
+      "icon": "Compass",
+      "visibility": "Internal"
+    }
+  ],
+  "sops": [
+    {
+      "key": "how-to-use-playbooks",
+      "playbookKey": "getting-started",
+      "title": "How to Use Playbooks",
+      "owner": "Support Operations",
+      "status": "Verified",
+      "estimatedTime": "10 min",
+      "purpose": "Provide a comprehensive guide on navigating, understanding, and organizing domain-specific Playbooks for customer support and operational procedures.",
+      "whenToUse": "When onboarding new support agents or setting up a new service line that requires structured operational knowledge grouping.",
+      "requirements": [
+        "Active access to the Iceberg Support Playbook portal",
+        "Assigned support agent role"
+      ],
+      "responsibleTeam": "Support Operations & Enablement",
+      "checklist": [
+        "Identify operational domain category",
+        "Locate target Playbook by code or name",
+        "Review active Issues and Guides",
+        "Verify escalation contacts and scope"
+      ],
+      "steps": [
+        {
+          "number": 1,
+          "title": "Navigate the Playbook Directory",
+          "description": "Open the Playbooks catalog from the main navigation. Browse available functional playbooks or filter by name to find the domain corresponding to the customer inquiry.",
+          "estimatedTime": "2 min",
+          "importantNote": "Playbooks group all operational materials: common issues, solution guides, and standard operating procedures for each domain.",
+          "successIndicator": "The target Playbook overview page is loaded, displaying key statistics and child content."
+        },
+        {
+          "number": 2,
+          "title": "Review Playbook Metadata and Scope",
+          "description": "Examine the playbook description, owner, responsible team, and assigned prefix code. Confirm that the current customer incident or operational request matches the stated scope.",
+          "estimatedTime": "3 min",
+          "successIndicator": "Confirmed scope matches the customer inquiry."
+        },
+        {
+          "number": 3,
+          "title": "Select Related Operational Content",
+          "description": "Drill down into specific Issues for diagnostic troubleshooting, Guides for customer-facing instructions, or SOPs for operational execution.",
+          "estimatedTime": "5 min",
+          "successIndicator": "Relevant guide or SOP is identified and opened for execution."
+        }
+      ],
+      "escalationRules": "If a requested operational domain lacks an existing Playbook, escalate to the Support Operations Lead via the team channel with the proposed scope and subject-matter owners.",
+      "completionCriteria": "The agent understands the playbook structure, can locate relevant materials by domain code, and knows where to seek assistance.",
+      "relatedIssues": [],
+      "relatedGuides": [],
+      "internalNotes": "Playbooks are intended to be living domain hubs. Keep owners updated quarterly.",
+      "revisionHistory": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-15",
+          "updatedBy": "Support Operations",
+          "changes": "Initial canonical onboarding release."
+        }
+      ]
+    },
+    {
+      "key": "how-to-use-issues",
+      "playbookKey": "getting-started",
+      "title": "How to Use Issues",
+      "owner": "Support Operations",
+      "status": "Verified",
+      "estimatedTime": "10 min",
+      "purpose": "Establish the standard workflow for searching, diagnosing, and logging operational issues encountered by support teams and customers.",
+      "whenToUse": "When triaging inbound incident tickets or classifying symptom patterns reported by users.",
+      "requirements": [
+        "Active ticket context or customer bug report",
+        "Read access to the relevant domain Playbook"
+      ],
+      "responsibleTeam": "Tier 1 / Tier 2 Support",
+      "checklist": [
+        "Capture exact error message and symptoms",
+        "Search for matching existing issue code",
+        "Collect required diagnostic information",
+        "Link to primary solution guide"
+      ],
+      "steps": [
+        {
+          "number": 1,
+          "title": "Extract Symptoms and Error Details",
+          "description": "Collect user error messages, environment details, timestamps, and reproduction steps from the inbound customer ticket.",
+          "estimatedTime": "3 min",
+          "importantNote": "Do not alter customer-provided error strings; search exact codes first.",
+          "successIndicator": "Exact error text and reproducible steps are logged in the ticket."
+        },
+        {
+          "number": 2,
+          "title": "Search and Match Known Issue Records",
+          "description": "Use global search or the Playbook issue list to match the symptom pattern. Compare the information-to-collect checklist against the customer submission.",
+          "estimatedTime": "3 min",
+          "successIndicator": "Matching issue record found with verified symptoms."
+        },
+        {
+          "number": 3,
+          "title": "Execute Linked Resolution or Escalate",
+          "description": "Open the primary Guide attached to the Issue to resolve the incident. If no existing Issue matches, follow the new issue intake protocol.",
+          "estimatedTime": "4 min",
+          "successIndicator": "Resolution guide opened or new issue draft initiated."
+        }
+      ],
+      "escalationRules": "If customer symptoms match an existing critical issue but the linked guide fails, escalate immediately to Tier 2 Engineering on-call.",
+      "completionCriteria": "Ticket is linked to the correct Issue record and troubleshooting steps are underway.",
+      "relatedIssues": [],
+      "relatedGuides": [],
+      "internalNotes": "Issue records should be reviewed periodically to deprecate resolved defects.",
+      "revisionHistory": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-15",
+          "updatedBy": "Support Operations",
+          "changes": "Initial canonical onboarding release."
+        }
+      ]
+    },
+    {
+      "key": "how-to-use-guides",
+      "playbookKey": "getting-started",
+      "title": "How to Use Guides",
+      "owner": "Support Operations",
+      "status": "Verified",
+      "estimatedTime": "15 min",
+      "purpose": "Standardize how agents follow, verify, and reference step-by-step resolution guides for customer incidents.",
+      "whenToUse": "When providing step-by-step customer troubleshooting instructions or performing guided technical fixes.",
+      "requirements": [
+        "Identified target Issue or Guide title",
+        "Agent workspace or staging test environment"
+      ],
+      "responsibleTeam": "Support Engineering & Customer Success",
+      "checklist": [
+        "Check prerequisites under 'Before You Start'",
+        "Verify guide status is 'Verified'",
+        "Execute steps sequentially",
+        "Confirm expected result at each step"
+      ],
+      "steps": [
+        {
+          "number": 1,
+          "title": "Review Prerequisites and Important Notes",
+          "description": "Before executing instructions, inspect the requirements, prerequisites, and warnings in the guide header to ensure all preconditions are satisfied.",
+          "estimatedTime": "3 min",
+          "importantNote": "Never skip prerequisites; doing so may cause cascading verification failures.",
+          "successIndicator": "All preconditions and necessary account permissions are verified."
+        },
+        {
+          "number": 2,
+          "title": "Execute Solution Steps Sequentially",
+          "description": "Follow each numbered step precisely. Verify intermediate results against the Expected Result indicator before proceeding to subsequent steps.",
+          "estimatedTime": "8 min",
+          "successIndicator": "All steps executed in order with expected outcomes verified."
+        },
+        {
+          "number": 3,
+          "title": "Consult Common Problems Accordion if Blocked",
+          "description": "If a step fails or produces an unexpected error, check the Common Problems section for documented edge cases, root causes, and workarounds.",
+          "estimatedTime": "4 min",
+          "successIndicator": "Workaround applied or blocker documented for escalation."
+        }
+      ],
+      "escalationRules": "If a verified Guide produces reproducible failure steps in a production customer tenant, flag the guide for review and escalate to the guide Author or Playbook Owner.",
+      "completionCriteria": "The customer problem is resolved or an accurate edge-case escalation is documented.",
+      "relatedIssues": [],
+      "relatedGuides": [],
+      "internalNotes": "Guides can be revised using version history to reflect platform UI changes.",
+      "revisionHistory": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-15",
+          "updatedBy": "Support Operations",
+          "changes": "Initial canonical onboarding release."
+        }
+      ]
+    },
+    {
+      "key": "how-to-use-sops",
+      "playbookKey": "getting-started",
+      "title": "How to Use SOPs",
+      "owner": "Support Operations",
+      "status": "Verified",
+      "estimatedTime": "12 min",
+      "purpose": "Guide support agents on executing and documenting repeatable operational procedures and internal workflows.",
+      "whenToUse": "When carrying out standard operational workflows (e.g. customer onboarding, credentials rotation, access provisioning, maintenance).",
+      "requirements": [
+        "Operational access credentials",
+        "Clear customer account identifier"
+      ],
+      "responsibleTeam": "Support & Onboarding Team",
+      "checklist": [
+        "Verify process checklist items as work proceeds",
+        "Adhere to estimated durations",
+        "Confirm completion criteria before closing ticket"
+      ],
+      "steps": [
+        {
+          "number": 1,
+          "title": "Inspect SOP Scope and When-to-Use Criteria",
+          "description": "Review the Purpose, When to Use, and Responsible Team sections to confirm this procedure applies to the customer scenario.",
+          "estimatedTime": "2 min",
+          "importantNote": "Do not use SOPs for exploratory debugging; use Guides and Issues instead.",
+          "successIndicator": "Confirmed operational task matches SOP criteria."
+        },
+        {
+          "number": 2,
+          "title": "Track Progress via the Process Checklist",
+          "description": "Use the interactive checklist at the top of the SOP to mark completed workflow stages in real time as actions are performed.",
+          "estimatedTime": "6 min",
+          "successIndicator": "All checklist items are completed and checked off."
+        },
+        {
+          "number": 3,
+          "title": "Verify Completion Criteria and Hand-off",
+          "description": "Ensure that all completion criteria defined in the SOP are satisfied before concluding the operational task or handing off to another team.",
+          "estimatedTime": "4 min",
+          "successIndicator": "All completion criteria met and documented in the ticket audit log."
+        }
+      ],
+      "escalationRules": "Follow the embedded Escalation Rules in the SOP if any prerequisite fails or SLA time exceeds the estimated threshold by 50%.",
+      "completionCriteria": "The procedure is completely executed in accordance with documented steps and verified against completion criteria.",
+      "relatedIssues": [],
+      "relatedGuides": [],
+      "internalNotes": "SOPs represent binding operational compliance. Changes require review.",
+      "revisionHistory": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-15",
+          "updatedBy": "Support Operations",
+          "changes": "Initial canonical onboarding release."
+        }
+      ]
+    },
+    {
+      "key": "how-to-use-users",
+      "playbookKey": "getting-started",
+      "title": "How to Manage Users",
+      "owner": "Security & Administration",
+      "status": "Verified",
+      "estimatedTime": "15 min",
+      "purpose": "Standard operating procedure for inviting team members, granting role-based permissions, and managing administrative access to the Support Playbook system.",
+      "whenToUse": "When provisioning new support staff, modifying user role assignments, or auditing administrative access privileges.",
+      "requirements": [
+        "Admin role required (restricted access)",
+        "Two-factor authentication enabled on Admin account",
+        "Approved HR/Management access request ticket"
+      ],
+      "responsibleTeam": "Security & Administration Team",
+      "checklist": [
+        "Confirm requester authorization ticket",
+        "Verify user corporate email address",
+        "Assign least-privilege role (Support vs Admin)",
+        "Audit activation status in user roster"
+      ],
+      "steps": [
+        {
+          "number": 1,
+          "title": "Verify Access Request and Admin Privileges",
+          "description": "Confirm you are authenticated with an Admin role. Review the incoming access request ticket to verify manager approval and corporate email domain.",
+          "estimatedTime": "3 min",
+          "importantNote": "Admin-only procedure: Non-admin users cannot access the User Management panel.",
+          "successIndicator": "Valid approved request ticket verified with matching corporate identity."
+        },
+        {
+          "number": 2,
+          "title": "Generate and Dispatch Invitation",
+          "description": "Navigate to Admin > Users. Click 'Invite User', enter the user's corporate email and designated role (Support or Admin). Send the secure activation invitation.",
+          "estimatedTime": "5 min",
+          "importantNote": "Invitations expire after 48 hours for security. Only grant Admin role when explicitly authorized in the ticket.",
+          "successIndicator": "Invitation record appears in the Pending Invitations list."
+        },
+        {
+          "number": 3,
+          "title": "Monitor Account Activation and Role Compliance",
+          "description": "Confirm the user successfully activates their account via the secure activation link. Verify their assigned role in the active user roster and record the ticket completion.",
+          "estimatedTime": "7 min",
+          "successIndicator": "User status transitions from Pending to Active in the User Management console."
+        }
+      ],
+      "escalationRules": "If an unauthorized access attempt or privilege escalation request is detected, lock the target account and notify the Security Operations Center (SOC) immediately.",
+      "completionCriteria": "The user account is properly provisioned with least-privilege role assignment and logged in the administrative audit record.",
+      "relatedIssues": [],
+      "relatedGuides": [],
+      "internalNotes": "Strict compliance requirement: Quarterly user audits must reconcile all active accounts against HR employee rosters.",
+      "revisionHistory": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-15",
+          "updatedBy": "Security & Administration",
+          "changes": "Initial canonical onboarding release with Admin-only safeguards."
+        }
+      ]
+    }
+  ]
+}
