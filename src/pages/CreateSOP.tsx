@@ -74,6 +74,9 @@ export function CreateSOP() {
 function SOPEditor({ initial }: { initial?: SOP }) {
   const { navigate, params } = useRouter();
   const isEdit = Boolean(initial);
+  const [draftSessionId] = useState(
+    () => `draft-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+  );
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
   const [playbookId, setPlaybookId] = useState(initial?.playbookId || params.playbook || '');
   const [title, setTitle] = useState(initial?.title || '');
@@ -108,6 +111,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
   const [completion, setCompletion] = useState(initial?.completionCriteria || '');
   const [notes, setNotes] = useState(initial?.internalNotes || '');
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const defaultSopChecklist = ['Customer information received', 'Setup verified', 'Testing completed'];
   const [defaultPlaybookId, setDefaultPlaybookId] = useState('');
@@ -208,6 +212,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setWarning('');
 
     const trimmedTitle = title.trim();
     const trimmedPurpose = purpose.trim();
@@ -226,7 +231,7 @@ function SOPEditor({ initial }: { initial?: SOP }) {
     setSubmitting(true);
     try {
       if (isEdit && initial) {
-        await updateSop({
+        const updated = await updateSop({
           id: initial.id,
           title: trimmedTitle,
           status,
@@ -251,7 +256,11 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           revisionHistory: initial.revisionHistory || []
         });
         markClean();
-        navigate(`/playbooks/${pb.slug}/sops/${initial.id}`);
+        if (updated.warning) {
+          setWarning(updated.warning);
+        }
+        const warningParam = updated.warning ? `?warning=${encodeURIComponent(updated.warning)}` : '';
+        navigate(`/playbooks/${pb.slug}/sops/${initial.id}${warningParam}`);
       } else {
         const sop = await createSop({
           playbookId,
@@ -277,7 +286,11 @@ function SOPEditor({ initial }: { initial?: SOP }) {
           owner: 'Support Team'
         });
         markClean();
-        navigate(`/playbooks/${pb.slug}/sops/${sop.id}`);
+        if (sop.warning) {
+          setWarning(sop.warning);
+        }
+        const warningParam = sop.warning ? `?warning=${encodeURIComponent(sop.warning)}` : '';
+        navigate(`/playbooks/${pb.slug}/sops/${sop.id}${warningParam}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : (isEdit ? 'Could not update SOP.' : 'Could not publish SOP.'));
@@ -400,7 +413,13 @@ function SOPEditor({ initial }: { initial?: SOP }) {
         </FormSection>
 
         <FormSection title="Process Steps">
-          <StepEditor steps={steps} initialSteps={initial?.steps} onChange={setSteps} />
+          <StepEditor
+            steps={steps}
+            initialSteps={initial?.steps}
+            domain="sops"
+            entityId={isEdit && initial ? initial.id : `pending/${draftSessionId}`}
+            onChange={setSteps}
+          />
         </FormSection>
 
         <FormSection title="Escalation Rules" optional>
@@ -435,6 +454,12 @@ function SOPEditor({ initial }: { initial?: SOP }) {
             />
           </label>
         </FormSection>
+
+        {warning && (
+          <p className="knowledge-warning" role="status">
+            {warning}
+          </p>
+        )}
 
         {error && (
           <p className="knowledge-error" role="alert">

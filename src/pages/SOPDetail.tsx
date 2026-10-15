@@ -270,6 +270,11 @@ export function SOPDetail() {
           {deleteError}
         </div>
       )}
+      {(params.warning || sop.warning) && !deleteError && (
+        <div className="knowledge-warning" role="status" style={{ margin: '12px 0' }}>
+          {params.warning || sop.warning}
+        </div>
+      )}
       {message && !deleteError && <p role="status" className="helper-text">{message}</p>}
 
       <ArticleHeader
@@ -312,7 +317,7 @@ export function SOPDetail() {
         </section>
       )}
 
-      <StepsSection steps={resolvedSteps.length ? resolvedSteps : sop.steps} title="Process Steps" />
+      <StepsSection steps={resolvedSteps.length ? resolvedSteps : sop.steps} title="Process Steps" inlineDirectVideo />
 
       {sop.escalationRules && (
         <section className="article-section">

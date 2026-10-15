@@ -120,7 +120,20 @@ export function generateStoragePath(
   filename: string
 ): string {
   const cleanDomain = domain || 'guides';
-  const cleanEntityId = entityId?.trim() ? encodeURIComponent(entityId.trim()) : 'pending';
+  let cleanEntityId: string;
+  if (!entityId || !entityId.trim()) {
+    cleanEntityId = 'pending';
+  } else {
+    const trimmed = entityId.trim();
+    if (trimmed.startsWith('draft-')) {
+      cleanEntityId = `pending/${encodeURIComponent(trimmed)}`;
+    } else {
+      cleanEntityId = trimmed
+        .split('/')
+        .map(seg => encodeURIComponent(seg))
+        .join('/');
+    }
+  }
   const ext = filename.includes('.') ? `.${filename.split('.').pop()?.toLowerCase()}` : '';
   const baseName = filename
     .replace(/\.[^/.]+$/, '')
@@ -158,8 +171,12 @@ export async function uploadMedia(
 
   // 2. Insert metadata into public.media_files
   try {
-    const isRealEntity = options.entityId && !options.entityId.startsWith('pending') && !options.entityId.startsWith('draft-');
-    await client.from('media_files').insert({
+    const isPendingOrDraft = !options.entityId ||
+      options.entityId.startsWith('pending') ||
+      options.entityId.startsWith('draft-');
+    const isRealEntity = !isPendingOrDraft;
+
+    const { error: insertError } = await client.from('media_files').insert({
       storage_key: storageKey,
       bucket: BUCKET_NAME,
       filename: file.name,
@@ -171,6 +188,10 @@ export async function uploadMedia(
       sop_id: options.domain === 'sops' && isRealEntity ? options.entityId : null,
       created_by: options.createdBy || 'Support Team'
     });
+
+    if (insertError) {
+      console.warn('Could not record media_files metadata:', insertError.message || insertError);
+    }
   } catch (metaErr) {
     // Non-fatal if media_files row creation warns; backend fn_create_guide will also link by key
     console.warn('Could not record media_files metadata:', metaErr);

@@ -3,6 +3,7 @@
 .knowledge-list-row button { min-width: 36px; min-height: 40px; }
 .knowledge-actions { display: flex; justify-content: flex-end; gap: 16px; }
 .knowledge-error { color: #a40044; padding: 14px; border: 1px solid var(--iceberg-magenta); border-radius: 8px; }
+.knowledge-warning { color: #855700; background-color: #fff9e6; padding: 14px; border: 1px solid #ffe082; border-radius: 8px; }
 .issue-selector { position: relative; }
 .issue-selector label { display: block; font-weight: 600; margin-bottom: 8px; }
 .issue-selector input { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
@@ -80,4 +81,18 @@
 .media-removed-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; width: 100%; }
 .media-removed-text { font-size: 14px; color: var(--secondary-text); font-style: italic; }
 .media-removed-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Media mode tabs (Upload File vs. External Link) */
+.media-mode-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.media-mode-btn { padding: 5px 12px; font-size: 12px; font-weight: 500; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--primary-white); color: var(--secondary-text); cursor: pointer; transition: all var(--transition-fast); }
+.media-mode-btn:hover { background: var(--light-background); color: var(--primary-text); }
+.media-mode-btn.active { background: var(--light-background); color: var(--iceberg-magenta); border-color: var(--iceberg-magenta); font-weight: 600; }
+.media-external-link-container { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--light-background); }
+.media-external-input-row { display: flex; gap: 8px; align-items: center; width: 100%; }
+.media-external-input { flex: 1; min-height: 36px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; background: var(--primary-white); }
+.media-external-input:focus { border-color: var(--iceberg-magenta); outline: none; }
+.media-external-preview-hint { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.media-external-link-preview { color: var(--iceberg-magenta); text-decoration: underline; font-weight: 500; }
+.step-media-block { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; width: 100%; }
+.step-media-label { font-size: 13px; font-weight: 600; color: var(--primary-text); }
 

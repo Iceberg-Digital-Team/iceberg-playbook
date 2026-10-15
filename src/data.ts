@@ -203,4 +203,6 @@ export interface SOP {
   relatedGuides: string[];
   internalNotes: string;
   revisionHistory: Revision[];
+  warning?: string;
+  mediaWarning?: string;
 }

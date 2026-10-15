@@ -76,7 +76,7 @@ export function parseHash(hash: string): RouteState {
   if (sopMatch) {
     return {
       path: '/playbooks/[slug]/sops/[id]',
-      params: { slug: sopMatch[1], id: decodeURIComponent(sopMatch[2]) }
+      params: { ...queryParams, slug: sopMatch[1], id: decodeURIComponent(sopMatch[2]) }
     };
   }
 

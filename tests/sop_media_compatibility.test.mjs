@@ -16,8 +16,9 @@ test('createSop preserves all optional Step fields', async () => {
   let insertedPayload = null;
   const mockClient = {
     rpc: async (fn, _params) => {
-      assert.equal(fn, 'fn_generate_sop_code');
-      return { data: 'WA-SOP01', error: null };
+      if (fn === 'fn_generate_sop_code') return { data: 'WA-SOP01', error: null };
+      if (fn === 'fn_link_sop_media') return { data: 1, error: null };
+      return { data: null, error: null };
     },
     from: (table) => {
       assert.equal(table, 'sops');
@@ -75,6 +76,7 @@ test('updateSop preserves all optional Step fields', async () => {
 
   let updatedPayload = null;
   const mockClient = {
+    rpc: async () => ({ data: 1, error: null }),
     from: (table) => {
       assert.equal(table, 'sops');
       return {
@@ -384,6 +386,7 @@ test('signed URLs are presentation-only and are not persisted back into the SOP 
   // 2. When updating SOP, durable keys are persisted to Supabase, NOT signed URLs
   let persistedPayload = null;
   const mockDbClient = {
+    rpc: async () => ({ data: 1, error: null }),
     from: () => ({
       update: (payload) => {
         persistedPayload = payload;
