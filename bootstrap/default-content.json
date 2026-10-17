@@ -41,7 +41,8 @@
           "description": "Open the Playbooks directory from the main navigation. Browse the available domain cards or use the search field to filter by name. Each card displays the domain description and live counts for child Issues, Guides, and SOPs.",
           "estimatedTime": "2 min",
           "importantNote": "Playbooks group all operational materials—common issues, solution guides, and standard operating procedures—by functional product or platform domain.",
-          "successIndicator": "The target Playbook card is located with its current content counts visible."
+          "successIndicator": "The target Playbook card is located with its current content counts visible.",
+          "videoLink": "assets/getting-started/playbooks/how-to-use-playbooks-tour.mp4"
         },
         {
           "number": 2,
