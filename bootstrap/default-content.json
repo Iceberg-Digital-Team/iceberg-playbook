@@ -20,54 +20,61 @@
       "owner": "Support Operations",
       "status": "Verified",
       "estimatedTime": "10 min",
-      "purpose": "Provide a comprehensive guide on navigating, understanding, and organizing domain-specific Playbooks for customer support and operational procedures.",
-      "whenToUse": "When onboarding new support agents or setting up a new service line that requires structured operational knowledge grouping.",
+      "purpose": "Explain how to find, open, and navigate Playbooks and their operational content.",
+      "whenToUse": "For new users learning how knowledge is organized, or when locating operational content by domain.",
       "requirements": [
         "Active access to the Iceberg Support Playbook portal",
-        "Assigned support agent role"
+        "Appropriate permission to view the relevant Playbook"
       ],
       "responsibleTeam": "Support Operations & Enablement",
       "checklist": [
-        "Identify operational domain category",
-        "Locate target Playbook by code or name",
-        "Review active Issues and Guides",
-        "Verify escalation contacts and scope"
+        "Locate the correct Playbook",
+        "Review Overview",
+        "Navigate Issues / Guides / SOPs",
+        "Use search/filter where needed",
+        "Open the relevant operational content"
       ],
       "steps": [
         {
           "number": 1,
-          "title": "Navigate the Playbook Directory",
-          "description": "Open the Playbooks catalog from the main navigation. Browse available functional playbooks or filter by name to find the domain corresponding to the customer inquiry.",
+          "title": "Navigate and Find a Playbook",
+          "description": "Open the Playbooks directory from the main navigation. Browse the available domain cards or use the search field to filter by name. Each card displays the domain description and live counts for child Issues, Guides, and SOPs.",
           "estimatedTime": "2 min",
-          "importantNote": "Playbooks group all operational materials: common issues, solution guides, and standard operating procedures for each domain.",
-          "successIndicator": "The target Playbook overview page is loaded, displaying key statistics and child content."
+          "importantNote": "Playbooks group all operational materials—common issues, solution guides, and standard operating procedures—by functional product or platform domain.",
+          "successIndicator": "The target Playbook card is located with its current content counts visible."
         },
         {
           "number": 2,
-          "title": "Review Playbook Metadata and Scope",
-          "description": "Examine the playbook description, owner, responsible team, and assigned prefix code. Confirm that the current customer incident or operational request matches the stated scope.",
+          "title": "Open the Playbook Workspace",
+          "description": "Click the target Playbook tile to enter its workspace. The Overview tab immediately surfaces recent operational activity: Recently Updated items, Common Issues, and Issues flagged as Needs Guide.",
           "estimatedTime": "3 min",
-          "successIndicator": "Confirmed scope matches the customer inquiry."
+          "successIndicator": "The Playbook workspace loads showing the Overview dashboard and active operational sections."
         },
         {
           "number": 3,
-          "title": "Select Related Operational Content",
-          "description": "Drill down into specific Issues for diagnostic troubleshooting, Guides for customer-facing instructions, or SOPs for operational execution.",
+          "title": "Navigate Operational Content",
+          "description": "Use the Issues, Guides, and SOPs tabs to inspect specific procedures and troubleshooting workflows. Refine lists using the in-playbook search bar or the Verified and Draft status filter. Use the contextual Create action to start a new Issue, Guide, or SOP linked directly to this Playbook.",
           "estimatedTime": "5 min",
-          "successIndicator": "Relevant guide or SOP is identified and opened for execution."
+          "successIndicator": "Relevant operational content is opened for execution or a linked draft is initiated."
         }
       ],
-      "escalationRules": "If a requested operational domain lacks an existing Playbook, escalate to the Support Operations Lead via the team channel with the proposed scope and subject-matter owners.",
-      "completionCriteria": "The agent understands the playbook structure, can locate relevant materials by domain code, and knows where to seek assistance.",
+      "escalationRules": "If the required operational domain or critical procedure is missing, contact the Support Operations Lead with the proposed scope and required subject-matter expertise.",
+      "completionCriteria": "The user can locate a Playbook, understand its structure, navigate Issues, Guides, and SOPs, and use search and status filters to find the required content.",
       "relatedIssues": [],
       "relatedGuides": [],
-      "internalNotes": "Playbooks are intended to be living domain hubs. Keep owners updated quarterly.",
+      "internalNotes": "Keep onboarding content aligned with the current Playbooks interface and workflow.",
       "revisionHistory": [
         {
           "version": "1.0.0",
           "date": "2026-10-15",
           "updatedBy": "Support Operations",
           "changes": "Initial canonical onboarding release."
+        },
+        {
+          "version": "1.0.1",
+          "date": "2026-10-16",
+          "updatedBy": "Support Operations",
+          "changes": "Aligned onboarding content with the current Playbooks interface and navigation flow."
         }
       ]
     },
@@ -78,54 +85,61 @@
       "owner": "Support Operations",
       "status": "Verified",
       "estimatedTime": "10 min",
-      "purpose": "Establish the standard workflow for searching, diagnosing, and logging operational issues encountered by support teams and customers.",
-      "whenToUse": "When triaging inbound incident tickets or classifying symptom patterns reported by users.",
+      "purpose": "Explain how to find, review, and document Issues and access their related solution Guides within a Playbook.",
+      "whenToUse": "When investigating a known problem, reviewing symptoms and diagnostic requirements, or documenting a newly identified Issue.",
       "requirements": [
-        "Active ticket context or customer bug report",
-        "Read access to the relevant domain Playbook"
+        "Active access to the Iceberg Support Playbook portal",
+        "Access to the relevant Playbook",
+        "Appropriate Support or Admin permission for create or edit actions"
       ],
       "responsibleTeam": "Tier 1 / Tier 2 Support",
       "checklist": [
-        "Capture exact error message and symptoms",
-        "Search for matching existing issue code",
-        "Collect required diagnostic information",
-        "Link to primary solution guide"
+        "Locate the relevant Issue",
+        "Use search or status filters when needed",
+        "Review symptoms and diagnostic information",
+        "Open the related Solution Guide if available",
+        "Create or update the Issue when appropriate"
       ],
       "steps": [
         {
           "number": 1,
-          "title": "Extract Symptoms and Error Details",
-          "description": "Collect user error messages, environment details, timestamps, and reproduction steps from the inbound customer ticket.",
+          "title": "Locate and Filter Issues",
+          "description": "Open the relevant Playbook and select the Issues tab, or use Quick Access or Global Search to locate an Issue across Playbooks. Use the in-playbook search field and the All, Verified, or Draft status filters to narrow the results. Issue rows show key information such as the Issue code, title, status, difficulty, and Jira Code when available.",
           "estimatedTime": "3 min",
-          "importantNote": "Do not alter customer-provided error strings; search exact codes first.",
-          "successIndicator": "Exact error text and reproducible steps are logged in the ticket."
+          "successIndicator": "The relevant Issue is identified with its current status and key metadata visible."
         },
         {
           "number": 2,
-          "title": "Search and Match Known Issue Records",
-          "description": "Use global search or the Playbook issue list to match the symptom pattern. Compare the information-to-collect checklist against the customer submission.",
+          "title": "Review Issue Details and Diagnostics",
+          "description": "Open the Issue to review its Problem Summary, Symptoms, Error Message or Code, context, affected area, and Information to Collect. Use these details to understand the problem and the diagnostic information required.",
           "estimatedTime": "3 min",
-          "successIndicator": "Matching issue record found with verified symptoms."
+          "successIndicator": "The Issue symptoms, context, and required diagnostic information have been reviewed."
         },
         {
           "number": 3,
-          "title": "Execute Linked Resolution or Escalate",
-          "description": "Open the primary Guide attached to the Issue to resolve the incident. If no existing Issue matches, follow the new issue intake protocol.",
+          "title": "Use the Solution Guide or Document New Knowledge",
+          "description": "Review the Solution Guide section on the Issue page. If a Guide is available, use Open Guide to access the resolution steps. If the Issue needs a Guide, use Create Guide to begin documenting the solution. If the problem does not yet exist as an Issue, use Create Issue from the Playbook workspace or Create hub.",
           "estimatedTime": "4 min",
-          "successIndicator": "Resolution guide opened or new issue draft initiated."
+          "successIndicator": "The related Guide is opened for execution, or a new Issue or Guide draft is started when needed."
         }
       ],
-      "escalationRules": "If customer symptoms match an existing critical issue but the linked guide fails, escalate immediately to Tier 2 Engineering on-call.",
-      "completionCriteria": "Ticket is linked to the correct Issue record and troubleshooting steps are underway.",
+      "escalationRules": "If an operational problem has no matching Issue, lacks required diagnostic information, or requires urgent escalation, contact the Support Operations Lead with the known symptoms and affected area.",
+      "completionCriteria": "The user can locate an Issue, understand its symptoms and diagnostic requirements, access its related Guide, and create or update Issue records when permitted.",
       "relatedIssues": [],
       "relatedGuides": [],
-      "internalNotes": "Issue records should be reviewed periodically to deprecate resolved defects.",
+      "internalNotes": "Issues describe diagnosed problems and symptoms. Step-by-step resolutions should be maintained in linked Guides.",
       "revisionHistory": [
         {
           "version": "1.0.0",
           "date": "2026-10-15",
           "updatedBy": "Support Operations",
           "changes": "Initial canonical onboarding release."
+        },
+        {
+          "version": "1.0.1",
+          "date": "2026-10-17",
+          "updatedBy": "Support Operations",
+          "changes": "Aligned onboarding content with the current Issues interface and Guide workflow."
         }
       ]
     },
@@ -136,54 +150,61 @@
       "owner": "Support Operations",
       "status": "Verified",
       "estimatedTime": "15 min",
-      "purpose": "Standardize how agents follow, verify, and reference step-by-step resolution guides for customer incidents.",
-      "whenToUse": "When providing step-by-step customer troubleshooting instructions or performing guided technical fixes.",
+      "purpose": "Explain how to locate, follow, verify, and maintain solution Guides linked to diagnosed Issues.",
+      "whenToUse": "When following a documented solution, reviewing prerequisites or troubleshooting notes, or creating and updating solution documentation.",
       "requirements": [
-        "Identified target Issue or Guide title",
-        "Agent workspace or staging test environment"
+        "Active access to the Iceberg Support Playbook portal",
+        "Access to the relevant Playbook and Guide",
+        "Appropriate Support or Admin permission for create, edit, restore, or delete actions"
       ],
       "responsibleTeam": "Support Engineering & Customer Success",
       "checklist": [
-        "Check prerequisites under 'Before You Start'",
-        "Verify guide status is 'Verified'",
-        "Execute steps sequentially",
-        "Confirm expected result at each step"
+        "Locate the relevant Guide",
+        "Confirm the linked Issue and prerequisites",
+        "Follow the numbered solution steps",
+        "Review Common Problems and supporting media when needed",
+        "Check Version History or update the Guide when appropriate"
       ],
       "steps": [
         {
           "number": 1,
-          "title": "Review Prerequisites and Important Notes",
-          "description": "Before executing instructions, inspect the requirements, prerequisites, and warnings in the guide header to ensure all preconditions are satisfied.",
+          "title": "Locate the Guide and Linked Issue",
+          "description": "Open the relevant Playbook and select the Guides tab, use Global Search, or open the Guide directly from an Issue's Solution Guide section. Use search and the All, Verified, or Draft status filters to narrow the results. When the Guide opens, confirm its parent Playbook and linked Issue.",
           "estimatedTime": "3 min",
-          "importantNote": "Never skip prerequisites; doing so may cause cascading verification failures.",
-          "successIndicator": "All preconditions and necessary account permissions are verified."
+          "successIndicator": "The correct Guide is open and its linked Issue and current status are confirmed."
         },
         {
           "number": 2,
-          "title": "Execute Solution Steps Sequentially",
-          "description": "Follow each numbered step precisely. Verify intermediate results against the Expected Result indicator before proceeding to subsequent steps.",
+          "title": "Review Prerequisites and Follow the Solution",
+          "description": "Review Before You Start and Important Information before beginning. Follow the numbered steps in order, using screenshots, videos, PDF references, Important Notes, and Success Indicators where provided. Confirm the expected result before moving to the next step.",
           "estimatedTime": "8 min",
-          "successIndicator": "All steps executed in order with expected outcomes verified."
+          "successIndicator": "The Guide steps are completed in sequence and the documented expected results are verified."
         },
         {
           "number": 3,
-          "title": "Consult Common Problems Accordion if Blocked",
-          "description": "If a step fails or produces an unexpected error, check the Common Problems section for documented edge cases, root causes, and workarounds.",
+          "title": "Resolve Blockers and Review Guide History",
+          "description": "If a step does not work as expected, review the Common Problems section for documented causes and solutions. Use Version History to inspect previous Guide versions and change summaries. When permitted, use Edit Guide, document what changed, preview the update, and publish a new version. Older versions can be restored non-destructively as a new current version.",
           "estimatedTime": "4 min",
-          "successIndicator": "Workaround applied or blocker documented for escalation."
+          "successIndicator": "The blocker is resolved, or the Guide history is reviewed and an appropriate update or version restore is completed."
         }
       ],
-      "escalationRules": "If a verified Guide produces reproducible failure steps in a production customer tenant, flag the guide for review and escalate to the guide Author or Playbook Owner.",
-      "completionCriteria": "The customer problem is resolved or an accurate edge-case escalation is documented.",
+      "escalationRules": "If a verified Guide produces reproducible errors, requires an urgent update after an upstream platform change, or the linked Issue has no usable solution, contact the Guide Author or Support Operations Lead.",
+      "completionCriteria": "The user can locate a Guide, confirm its linked Issue, follow and verify its solution steps, use troubleshooting resources, inspect Version History, and update or restore Guides when permitted.",
       "relatedIssues": [],
       "relatedGuides": [],
-      "internalNotes": "Guides can be revised using version history to reflect platform UI changes.",
+      "internalNotes": "Guides contain canonical step-by-step solutions for diagnosed Issues. Publishing an update creates a non-destructive version snapshot and preserves the Guide history.",
       "revisionHistory": [
         {
           "version": "1.0.0",
           "date": "2026-10-15",
           "updatedBy": "Support Operations",
           "changes": "Initial canonical onboarding release."
+        },
+        {
+          "version": "1.0.1",
+          "date": "2026-10-17",
+          "updatedBy": "Support Operations",
+          "changes": "Aligned onboarding content with the current Guides workflow, Issue relationship, and version history."
         }
       ]
     },
@@ -194,53 +215,62 @@
       "owner": "Support Operations",
       "status": "Verified",
       "estimatedTime": "12 min",
-      "purpose": "Guide support agents on executing and documenting repeatable operational procedures and internal workflows.",
-      "whenToUse": "When carrying out standard operational workflows (e.g. customer onboarding, credentials rotation, access provisioning, maintenance).",
+      "purpose": "Explain how to locate, follow, verify, and maintain Standard Operating Procedures using checklists, process steps, supporting media, and escalation guidance.",
+      "whenToUse": "When executing a repeatable operational workflow, checking prerequisites, tracking a multi-stage process, or creating and updating standard operating procedures.",
       "requirements": [
-        "Operational access credentials",
-        "Clear customer account identifier"
+        "Active access to the Iceberg Support Playbook portal",
+        "Access to the relevant Playbook and SOP",
+        "Appropriate Support or Admin permission for create or edit actions"
       ],
       "responsibleTeam": "Support & Onboarding Team",
       "checklist": [
-        "Verify process checklist items as work proceeds",
-        "Adhere to estimated durations",
-        "Confirm completion criteria before closing ticket"
+        "Locate the relevant SOP",
+        "Confirm its Purpose, When to Use, and Responsible Team",
+        "Complete Before You Start prerequisites",
+        "Track progress using the Process Checklist",
+        "Follow process steps and verify Expected Results",
+        "Review Escalation Rules or update the SOP when appropriate"
       ],
       "steps": [
         {
           "number": 1,
-          "title": "Inspect SOP Scope and When-to-Use Criteria",
-          "description": "Review the Purpose, When to Use, and Responsible Team sections to confirm this procedure applies to the customer scenario.",
-          "estimatedTime": "2 min",
-          "importantNote": "Do not use SOPs for exploratory debugging; use Guides and Issues instead.",
-          "successIndicator": "Confirmed operational task matches SOP criteria."
+          "title": "Locate and Review the SOP",
+          "description": "Open the relevant Playbook and select the SOPs tab, use Global Search, or use the SOPs Quick Access entry on Home. Use search and the All, Verified, or Draft status filters to locate the procedure. Open the SOP and review its Purpose, When to Use, Responsible Team, and estimated duration to confirm it applies to the task.",
+          "estimatedTime": "3 min",
+          "successIndicator": "The correct SOP is open and its operational scope and ownership are confirmed."
         },
         {
           "number": 2,
-          "title": "Track Progress via the Process Checklist",
-          "description": "Use the interactive checklist at the top of the SOP to mark completed workflow stages in real time as actions are performed.",
+          "title": "Check Prerequisites and Follow the Procedure",
+          "description": "Review and complete the Before You Start requirements, then use the interactive Process Checklist to track workflow progress. Follow each numbered Process Step in order, reviewing Important Notes, screenshots, inline videos, PDF references, and Expected Results where provided.",
           "estimatedTime": "6 min",
-          "successIndicator": "All checklist items are completed and checked off."
+          "successIndicator": "The required checklist items and process steps are completed with expected results verified."
         },
         {
           "number": 3,
-          "title": "Verify Completion Criteria and Hand-off",
-          "description": "Ensure that all completion criteria defined in the SOP are satisfied before concluding the operational task or handing off to another team.",
-          "estimatedTime": "4 min",
-          "successIndicator": "All completion criteria met and documented in the ticket audit log."
+          "title": "Verify Completion and Maintain the SOP",
+          "description": "Review the Completion Criteria before finishing the procedure. If a blocker occurs, consult the Escalation Rules and Related Resources. Authorized users can use Edit to update requirements, checklist items, process steps, or media. Review Version History to understand previously documented changes.",
+          "estimatedTime": "3 min",
+          "successIndicator": "The completion criteria are verified, or an appropriate escalation or SOP update is started."
         }
       ],
-      "escalationRules": "Follow the embedded Escalation Rules in the SOP if any prerequisite fails or SLA time exceeds the estimated threshold by 50%.",
-      "completionCriteria": "The procedure is completely executed in accordance with documented steps and verified against completion criteria.",
+      "escalationRules": "If an operational procedure produces recurring failures, has outdated prerequisites, or a critical workflow lacks an appropriate SOP, contact the Support Operations Lead or responsible SOP team.",
+      "completionCriteria": "The user can locate an SOP, review its scope and prerequisites, track progress with interactive checklists, follow and verify process steps with supporting media, and update the SOP when permitted.",
       "relatedIssues": [],
       "relatedGuides": [],
-      "internalNotes": "SOPs represent binding operational compliance. Changes require review.",
+      "internalNotes": "SOPs document repeatable operational procedures and workflows. Use Guides for step-by-step technical troubleshooting solutions to diagnosed Issues.",
       "revisionHistory": [
         {
           "version": "1.0.0",
           "date": "2026-10-15",
           "updatedBy": "Support Operations",
           "changes": "Initial canonical onboarding release."
+        },
+        {
+          "version": "1.0.1",
+          "date": "2026-10-17",
+          "updatedBy": "Support Operations",
+          "changes": "Aligned onboarding content with the current SOP workflow, interactive checklists, media support, and editing experience."
         }
       ]
     },
@@ -251,56 +281,61 @@
       "owner": "Security & Administration",
       "status": "Verified",
       "estimatedTime": "15 min",
-      "purpose": "Standard operating procedure for inviting team members, granting role-based permissions, and managing administrative access to the Support Playbook system.",
-      "whenToUse": "When provisioning new support staff, modifying user role assignments, or auditing administrative access privileges.",
+      "purpose": "Explain how Admins can invite team members, assign appropriate roles, manage account access, create password reset links, and use built-in administrative safeguards.",
+      "whenToUse": "When onboarding a new team member, changing a user's role, disabling or re-enabling access, creating a password reset link, or reviewing user and invitation status.",
       "requirements": [
-        "Admin role required (restricted access)",
-        "Two-factor authentication enabled on Admin account",
-        "Approved HR/Management access request ticket"
+        "Active access to the Iceberg Support Playbook portal",
+        "Admin role assigned to your account"
       ],
       "responsibleTeam": "Security & Administration Team",
       "checklist": [
-        "Confirm requester authorization ticket",
-        "Verify user corporate email address",
-        "Assign least-privilege role (Support vs Admin)",
-        "Audit activation status in user roster"
+        "Open the Users console",
+        "Review user roles and account statuses",
+        "Invite new users with the appropriate role and link expiry",
+        "Copy and securely share generated activation links",
+        "Manage roles, account access, or password reset links when needed",
+        "Observe self-protection and last-admin safeguards"
       ],
       "steps": [
         {
           "number": 1,
-          "title": "Verify Access Request and Admin Privileges",
-          "description": "Confirm you are authenticated with an Admin role. Review the incoming access request ticket to verify manager approval and corporate email domain.",
+          "title": "Open User Management and Review Access",
+          "description": "Open Users from the Admin-only sidebar navigation. Review the unified user table showing names, email addresses, roles, statuses, invitation expiry details, and available actions. The available roles are Viewer, Support, and Admin, while account states include Active, Disabled, Pending Invite, and Invite Expired.",
           "estimatedTime": "3 min",
-          "importantNote": "Admin-only procedure: Non-admin users cannot access the User Management panel.",
-          "successIndicator": "Valid approved request ticket verified with matching corporate identity."
+          "successIndicator": "The Users console is open and current account roles and statuses are understood."
         },
         {
           "number": 2,
-          "title": "Generate and Dispatch Invitation",
-          "description": "Navigate to Admin > Users. Click 'Invite User', enter the user's corporate email and designated role (Support or Admin). Send the secure activation invitation.",
-          "estimatedTime": "5 min",
-          "importantNote": "Invitations expire after 48 hours for security. Only grant Admin role when explicitly authorized in the ticket.",
-          "successIndicator": "Invitation record appears in the Pending Invitations list."
+          "title": "Invite a User and Share the Activation Link",
+          "description": "Select Invite user and enter the user's email address, full name, role, and link expiry. Assign the least-privilege role appropriate for the user's responsibilities. After the invitation is created, copy the activation link from the result dialog and share it securely with the user. The generated link is shown only once in the interface.",
+          "estimatedTime": "6 min",
+          "successIndicator": "The invitation is created with the correct role and expiry, and the activation link is ready to be shared securely."
         },
         {
           "number": 3,
-          "title": "Monitor Account Activation and Role Compliance",
-          "description": "Confirm the user successfully activates their account via the secure activation link. Verify their assigned role in the active user roster and record the ticket completion.",
-          "estimatedTime": "7 min",
-          "successIndicator": "User status transitions from Pending to Active in the User Management console."
+          "title": "Manage Roles, Access, and Password Links",
+          "description": "Use the contextual actions on a user row to change roles, disable or enable account access, or create a password reset link. Pending invitations can be resent or revoked. The system prevents an Admin from disabling or demoting their own account and also protects the last active Admin from being disabled or demoted.",
+          "estimatedTime": "6 min",
+          "successIndicator": "The required user access action is completed while administrative safeguards remain intact."
         }
       ],
-      "escalationRules": "If an unauthorized access attempt or privilege escalation request is detected, lock the target account and notify the Security Operations Center (SOC) immediately.",
-      "completionCriteria": "The user account is properly provisioned with least-privilege role assignment and logged in the administrative audit record.",
+      "escalationRules": "If an invitation cannot be redeemed, account access cannot be restored through the available console actions, or an urgent administrative access issue cannot be resolved safely, contact the Lead Administrator or Support Operations Lead.",
+      "completionCriteria": "The Admin can review the user roster, invite new users with the appropriate role and expiry, securely share activation links, manage account roles and access, create password reset links, and understand the built-in administrative safeguards.",
       "relatedIssues": [],
       "relatedGuides": [],
-      "internalNotes": "Strict compliance requirement: Quarterly user audits must reconcile all active accounts against HR employee rosters.",
+      "internalNotes": "User accounts are not deleted from User Management. Use Disable to revoke access while preserving authorship, history, and audit records. The system protects both the current Admin account and the last active Admin from accidental lockout.",
       "revisionHistory": [
         {
           "version": "1.0.0",
           "date": "2026-10-15",
           "updatedBy": "Security & Administration",
           "changes": "Initial canonical onboarding release with Admin-only safeguards."
+        },
+        {
+          "version": "1.0.1",
+          "date": "2026-10-17",
+          "updatedBy": "Security & Administration",
+          "changes": "Aligned onboarding content with the current Users console, invitation workflow, role management, password links, and administrative safeguards."
         }
       ]
     }
