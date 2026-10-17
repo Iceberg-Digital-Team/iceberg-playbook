@@ -107,7 +107,8 @@
           "title": "Locate and Filter Issues",
           "description": "Open the relevant Playbook and select the Issues tab, or use Quick Access or Global Search to locate an Issue across Playbooks. Use the in-playbook search field and the All, Verified, or Draft status filters to narrow the results. Issue rows show key information such as the Issue code, title, status, difficulty, and Jira Code when available.",
           "estimatedTime": "3 min",
-          "successIndicator": "The relevant Issue is identified with its current status and key metadata visible."
+          "successIndicator": "The relevant Issue is identified with its current status and key metadata visible.",
+          "videoLink": "assets/getting-started/issues/how-to-use-issues-tour.mp4"
         },
         {
           "number": 2,
