@@ -1041,7 +1041,23 @@ test('23. semantic JSON equality: arrays with different item order compare diffe
 test('24. semantic JSON equality: actual semantically identical DB JSONB vs bundle JSON produces NOOP', async () => {
   // Simulate Postgres JSONB key re-ordering for steps and revision_history
   const sopBundle = canonicalBundle.sops[0];
-  const dbStepsReordered = sopBundle.steps.map(step => {
+  const resolvedSteps = sopBundle.steps.map(step => {
+    const resolved = { ...step };
+    for (const field of ['screenshot', 'videoLink', 'pdfReference']) {
+      if (typeof resolved[field] === 'string' && resolved[field].startsWith('assets/')) {
+        const asset = resolveLocalAsset({
+          relativePath: resolved[field],
+          bootstrapDir,
+          playbookKey: 'getting-started',
+          sopKey: sopBundle.key,
+        });
+        resolved[field] = asset.storageKey;
+      }
+    }
+    return resolved;
+  });
+
+  const dbStepsReordered = resolvedSteps.map(step => {
     const keys = Object.keys(step).sort();
     const reordered = {};
     for (const k of keys) reordered[k] = step[k];
@@ -1077,7 +1093,7 @@ test('24. semantic JSON equality: actual semantically identical DB JSONB vs bund
     deleted_at: null,
   };
 
-  assert.equal(areSopsEqual(dbRow, sopBundle, sopBundle.steps), true);
+  assert.equal(areSopsEqual(dbRow, sopBundle, resolvedSteps), true);
 
   const adapter = new MockBootstrapAdapter({
     playbooks: [
