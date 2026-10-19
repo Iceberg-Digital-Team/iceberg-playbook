@@ -307,7 +307,8 @@
           "description": "Open Users from the Admin-only sidebar navigation. Review the unified user table showing names, email addresses, roles, statuses, invitation expiry details, and available actions. The available roles are Viewer, Support, and Admin, while account states include Active, Disabled, Pending Invite, and Invite Expired.",
           "estimatedTime": "3 min",
           "importantNote": "Admin-only procedure: Only users with the Admin role can access User Management.",
-          "successIndicator": "The Users console is open and current account roles and statuses are understood."
+          "successIndicator": "The Users console is open and current account roles and statuses are understood.",
+          "videoLink": "assets/getting-started/users/how-to-manage-users-tour.mp4"
         },
         {
           "number": 2,
