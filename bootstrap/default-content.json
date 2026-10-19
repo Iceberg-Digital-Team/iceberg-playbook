@@ -173,7 +173,8 @@
           "title": "Locate the Guide and Linked Issue",
           "description": "Open the relevant Playbook and select the Guides tab, use Global Search, or open the Guide directly from an Issue's Solution Guide section. Use search and the All, Verified, or Draft status filters to narrow the results. When the Guide opens, confirm its parent Playbook and linked Issue.",
           "estimatedTime": "3 min",
-          "successIndicator": "The correct Guide is open and its linked Issue and current status are confirmed."
+          "successIndicator": "The correct Guide is open and its linked Issue and current status are confirmed.",
+          "videoLink": "assets/getting-started/guides/how-to-use-guides-tour.mp4"
         },
         {
           "number": 2,
