@@ -240,7 +240,8 @@
           "title": "Locate and Review the SOP",
           "description": "Open the relevant Playbook and select the SOPs tab, use Global Search, or use the SOPs Quick Access entry on Home. Use search and the All, Verified, or Draft status filters to locate the procedure. Open the SOP and review its Purpose, When to Use, Responsible Team, and estimated duration to confirm it applies to the task.",
           "estimatedTime": "3 min",
-          "successIndicator": "The correct SOP is open and its operational scope and ownership are confirmed."
+          "successIndicator": "The correct SOP is open and its operational scope and ownership are confirmed.",
+          "videoLink": "assets/getting-started/sops/how-to-use-sops-tour.mp4"
         },
         {
           "number": 2,
