@@ -1,39 +1,9 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+// The app's single backend client. The name is historical: it now talks to the Iceberg
+// Playbook API (server/) over HTTP, backed by plain PostgreSQL. Services import it from here,
+// so swapping the backend again only touches this file and apiClient.ts.
+import { createApiClient } from './apiClient';
+import type { DbClient } from './apiClient';
 
-function getEnv(name: string): string {
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[name]) {
-    return import.meta.env[name];
-  }
-  const proc = (globalThis as unknown as { process?: { env?: Record<string, string> } }).process;
-  if (proc?.env && proc.env[name]) {
-    return proc.env[name];
-  }
-  return '';
-}
+export type { DbClient };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL');
-const supabaseKey = getEnv('VITE_SUPABASE_PUBLISHABLE_KEY') || getEnv('VITE_SUPABASE_ANON_KEY');
-
-export function validateSupabaseConfig(): void {
-  const missing: string[] = [];
-  if (!supabaseUrl) missing.push('VITE_SUPABASE_URL');
-  if (!supabaseKey) missing.push('VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY)');
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required Supabase environment configuration: ${missing.join(', ')}. ` +
-      'Please check your .env.local file (refer to .env.example).'
-    );
-  }
-}
-
-// Fail clearly during development if required environment variables are missing
-validateSupabaseConfig();
-
-export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+export const supabase: DbClient = createApiClient();

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import type { Issue, Attachment } from '../data';
 
@@ -87,7 +87,7 @@ export function mapIssueRowToIssue(row: DatabaseIssueRow): Issue {
 }
 
 export async function listIssues(
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Issue[]> {
   const { data, error } = await client
     .from('issues')
@@ -107,7 +107,7 @@ export async function listIssues(
 
 export async function listIssuesByPlaybook(
   playbookId: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Issue[]> {
   const cleanId = playbookId.trim();
   if (!cleanId) {
@@ -133,7 +133,7 @@ export async function listIssuesByPlaybook(
 
 export async function getIssueById(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Issue | null> {
   const cleanId = id.trim();
   if (!cleanId) {
@@ -163,7 +163,7 @@ export async function getIssueById(
 
 export async function createIssue(
   input: CreateIssueInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Issue> {
   const trimmedPlaybookId = input.playbookId?.trim() || '';
   const trimmedTitle = input.title?.trim() || '';
@@ -226,7 +226,7 @@ export async function createIssue(
 
 export async function updateIssue(
   input: UpdateIssueInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Issue> {
   const cleanId = input.id?.trim() || '';
   const trimmedTitle = input.title?.trim() || '';
@@ -289,7 +289,7 @@ export async function updateIssue(
 
 export async function softDeleteIssue(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<void> {
   const cleanId = id.trim();
   if (!cleanId) {

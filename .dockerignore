@@ -1,0 +1,15 @@
+node_modules
+dist
+server/dist
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.claude
+tests
+bootstrap/assets
+docs
+data

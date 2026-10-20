@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import { getSearchData, type RawSearchData } from './dataSource';
 import { searchKnowledge, type SearchOptions, type ContentItem } from './searchCore';
@@ -14,7 +14,7 @@ export function executeSearch(
 export async function search(
   query: string,
   options: SearchOptions = {},
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<ContentItem[]> {
   const data = await getSearchData(client);
   return executeSearch(query, data, options);

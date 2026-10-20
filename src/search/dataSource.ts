@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import type { Playbook, Issue, VersionedGuide, SOP } from '../data';
 import { listPlaybooks } from '../services/playbookService';
@@ -14,7 +14,7 @@ export interface RawSearchData {
 }
 
 export async function getSearchData(
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<RawSearchData> {
   const [playbooks, issues, guides, sops] = await Promise.all([
     listPlaybooks(client),
