@@ -658,8 +658,11 @@ Usage:
   npm run bootstrap:content -- --bundle=<path> # Specify custom bundle JSON
 
 Environment Variables:
-  SUPABASE_URL (or VITE_SUPABASE_URL)
-  SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)
+  Plain PostgreSQL / Railway deployment (preferred when set):
+    BOOTSTRAP_API_URL, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD
+  Supabase reference backend:
+    SUPABASE_URL (or VITE_SUPABASE_URL)
+    SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)
 `);
     return 0;
   }
@@ -691,6 +694,27 @@ Environment Variables:
   // 2. Initialize Adapter
   const bootstrapDir = path.dirname(options.bundlePath);
   let activeAdapter = adapter;
+
+  if (!activeAdapter) {
+    const env = loadEnvFiles();
+
+    // Plain PostgreSQL deployment (Docker / Railway): talk to the Iceberg Playbook API as an Admin.
+    if (env.BOOTSTRAP_API_URL) {
+      const email = env.BOOTSTRAP_ADMIN_EMAIL;
+      const password = env.BOOTSTRAP_ADMIN_PASSWORD;
+      if (!email || !password) {
+        console.error('Error: BOOTSTRAP_API_URL requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD.');
+        return 1;
+      }
+      const { ApiBootstrapAdapter } = await import('./lib/bootstrap/api_adapter.mjs');
+      try {
+        activeAdapter = await ApiBootstrapAdapter.connect({ apiUrl: env.BOOTSTRAP_API_URL.replace(/\/+$/, ''), email, password });
+      } catch (err) {
+        console.error(`Error: ${err.message}`);
+        return 1;
+      }
+    }
+  }
 
   if (!activeAdapter) {
     const env = loadEnvFiles();
