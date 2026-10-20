@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { SiteCredit } from '../layout/SiteCredit';
 import './Auth.css';
 
 export function AuthLayout({ children }: { children: ReactNode }) {
@@ -9,6 +10,6 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <svg className="auth-lines" viewBox="0 0 600 320" fill="none" aria-hidden="true"><path d="M-50 280 260 40 650 280M-50 280H650M60 320 260 40 420 320M260 40V320M-50 200H650M-50 120H650" stroke="currentColor"/></svg>
       <p className="auth-identity-footer">Internal Support Knowledge System</p>
     </section>
-    <section className="auth-panel"><div className="auth-panel-content">{children}</div><footer className="auth-footer">Internal Iceberg Digital system.<br/>Authorized users only.</footer></section>
+    <section className="auth-panel"><div className="auth-panel-content">{children}</div><footer className="auth-footer">Internal Iceberg Digital system.<br/>Authorized users only.<SiteCredit centered /></footer></section>
   </main>;
 }
