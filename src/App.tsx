@@ -116,10 +116,11 @@ function WorkspaceApp() {
           <ContentErrorBoundary key={`${path}-${params.id || params.slug || ""}`}>{renderPage()}</ContentErrorBoundary>
         </main>
         <footer className="site-credit">
-          Developed within Iceberg X by{' '}
+          <img src="/iceberg-icon.png" alt="" aria-hidden="true" className="site-credit-icon" />
+          <span>Developed within Iceberg X by{' '}
           <a href="https://x.iceberg-digital.co.uk/x/010" target="_blank" rel="noopener noreferrer">Cube #10</a>
           {' '}and{' '}
-          <a href="https://x.iceberg-digital.co.uk/x/049" target="_blank" rel="noopener noreferrer">Cube #49</a>.
+          <a href="https://x.iceberg-digital.co.uk/x/049" target="_blank" rel="noopener noreferrer">Cube #49</a>.</span>
         </footer>
       </div>
     </div>
