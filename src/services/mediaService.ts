@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../lib/supabase';
+import type { Step, SOP } from '../data';
 
 export const BUCKET_NAME = 'support-assets';
 export const MAX_FILE_SIZE_BYTES = 52428800; // 50 MB
@@ -119,7 +120,20 @@ export function generateStoragePath(
   filename: string
 ): string {
   const cleanDomain = domain || 'guides';
-  const cleanEntityId = entityId?.trim() ? encodeURIComponent(entityId.trim()) : 'pending';
+  let cleanEntityId: string;
+  if (!entityId || !entityId.trim()) {
+    cleanEntityId = 'pending';
+  } else {
+    const trimmed = entityId.trim();
+    if (trimmed.startsWith('draft-')) {
+      cleanEntityId = `pending/${encodeURIComponent(trimmed)}`;
+    } else {
+      cleanEntityId = trimmed
+        .split('/')
+        .map(seg => encodeURIComponent(seg))
+        .join('/');
+    }
+  }
   const ext = filename.includes('.') ? `.${filename.split('.').pop()?.toLowerCase()}` : '';
   const baseName = filename
     .replace(/\.[^/.]+$/, '')
@@ -157,8 +171,12 @@ export async function uploadMedia(
 
   // 2. Insert metadata into public.media_files
   try {
-    const isRealEntity = options.entityId && !options.entityId.startsWith('pending') && !options.entityId.startsWith('draft-');
-    await client.from('media_files').insert({
+    const isPendingOrDraft = !options.entityId ||
+      options.entityId.startsWith('pending') ||
+      options.entityId.startsWith('draft-');
+    const isRealEntity = !isPendingOrDraft;
+
+    const { error: insertError } = await client.from('media_files').insert({
       storage_key: storageKey,
       bucket: BUCKET_NAME,
       filename: file.name,
@@ -170,6 +188,10 @@ export async function uploadMedia(
       sop_id: options.domain === 'sops' && isRealEntity ? options.entityId : null,
       created_by: options.createdBy || 'Support Team'
     });
+
+    if (insertError) {
+      console.warn('Could not record media_files metadata:', insertError.message || insertError);
+    }
   } catch (metaErr) {
     // Non-fatal if media_files row creation warns; backend fn_create_guide will also link by key
     console.warn('Could not record media_files metadata:', metaErr);
@@ -258,4 +280,64 @@ export async function removeMedia(
   if (error) {
     throw new Error(`Failed to remove media: ${error.message}`);
   }
+}
+
+export async function resolveStepMedia(
+  steps: Step[],
+  client: SupabaseClient = defaultSupabase
+): Promise<Step[]> {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return [];
+  }
+
+  const keysToResolve = new Set<string>();
+
+  for (const step of steps) {
+    if (step.screenshot && isStorageKey(step.screenshot)) {
+      keysToResolve.add(step.screenshot.trim());
+    }
+    if (step.videoLink && isStorageKey(step.videoLink)) {
+      keysToResolve.add(step.videoLink.trim());
+    }
+    if (step.pdfReference && isStorageKey(step.pdfReference)) {
+      keysToResolve.add(step.pdfReference.trim());
+    }
+  }
+
+  if (keysToResolve.size === 0) {
+    return steps;
+  }
+
+  const signedUrls = await getSignedMediaUrls(Array.from(keysToResolve), 3600, client);
+
+  return steps.map(step => {
+    const screenshotKey = step.screenshot?.trim();
+    const videoKey = step.videoLink?.trim();
+    const pdfKey = step.pdfReference?.trim();
+
+    return {
+      ...step,
+      screenshot: screenshotKey && signedUrls.has(screenshotKey)
+        ? signedUrls.get(screenshotKey)!
+        : step.screenshot,
+      videoLink: videoKey && signedUrls.has(videoKey)
+        ? signedUrls.get(videoKey)!
+        : step.videoLink,
+      pdfReference: pdfKey && signedUrls.has(pdfKey)
+        ? signedUrls.get(pdfKey)!
+        : step.pdfReference
+    };
+  });
+}
+
+export async function resolveSopMedia(
+  sop: SOP,
+  client: SupabaseClient = defaultSupabase
+): Promise<SOP> {
+  if (!sop) return sop;
+  const resolvedSteps = await resolveStepMedia(sop.steps || [], client);
+  return {
+    ...sop,
+    steps: resolvedSteps
+  };
 }

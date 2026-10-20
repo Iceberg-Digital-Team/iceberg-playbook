@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Edit, Link2, Share2, Trash2 } from 'lucide-react';
 import { useRouter } from '../router';
-import type { Playbook, SOP } from '../data';
+import type { Playbook, SOP, Step } from '../data';
 import { formatGuideDate } from '../data';
 import { getPlaybookBySlug } from '../services/playbookService';
 import { getSopById, softDeleteSop } from '../services/sopService';
+import { resolveStepMedia } from '../services/mediaService';
 import { getIssueById } from '../services/issueService';
 import { getGuideById } from '../services/guideService';
 import {
@@ -77,9 +78,35 @@ export function SOPDetail() {
   const [deleting, setDeleting] = useState(false);
   const [pb, setPb] = useState<Playbook | null>(null);
   const [sop, setSop] = useState<SOP | null>(null);
+  const [resolvedSteps, setResolvedSteps] = useState<Step[]>([]);
   const [related, setRelated] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(Boolean(params.slug && params.id));
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function resolveMedia() {
+      if (!sop?.steps?.length) {
+        if (active) setResolvedSteps([]);
+        return;
+      }
+
+      try {
+        const steps = await resolveStepMedia(sop.steps);
+        if (active) setResolvedSteps(steps);
+      } catch (err) {
+        console.warn('Could not resolve SOP media URLs:', err);
+        if (active) setResolvedSteps(sop.steps);
+      }
+    }
+
+    resolveMedia();
+
+    return () => {
+      active = false;
+    };
+  }, [sop?.id, sop?.steps]);
 
   useEffect(() => {
     let active = true;
@@ -243,6 +270,11 @@ export function SOPDetail() {
           {deleteError}
         </div>
       )}
+      {(params.warning || sop.warning) && !deleteError && (
+        <div className="knowledge-warning" role="status" style={{ margin: '12px 0' }}>
+          {params.warning || sop.warning}
+        </div>
+      )}
       {message && !deleteError && <p role="status" className="helper-text">{message}</p>}
 
       <ArticleHeader
@@ -285,7 +317,7 @@ export function SOPDetail() {
         </section>
       )}
 
-      <StepsSection steps={sop.steps} title="Process Steps" />
+      <StepsSection steps={resolvedSteps.length ? resolvedSteps : sop.steps} title="Process Steps" inlineDirectVideo />
 
       {sop.escalationRules && (
         <section className="article-section">

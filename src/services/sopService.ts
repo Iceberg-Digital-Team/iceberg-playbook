@@ -141,6 +141,103 @@ export async function getSopById(
   return data ? mapSopRowToSop(data) : null;
 }
 
+import { isStorageKey } from './mediaService';
+export { resolveStepMedia, resolveSopMedia } from './mediaService';
+
+export const MEDIA_LINKING_WARNING = 'The SOP was saved, but media ownership metadata could not be linked.';
+
+export function extractStepStorageKeys(
+  steps?: Step[] | Array<Omit<Step, 'number'>> | null
+): string[] {
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return [];
+  }
+  const keys = new Set<string>();
+  for (const step of steps) {
+    if (step.screenshot && isStorageKey(step.screenshot)) {
+      keys.add(step.screenshot.trim());
+    }
+    if (step.videoLink && isStorageKey(step.videoLink)) {
+      keys.add(step.videoLink.trim());
+    }
+    if (step.pdfReference && isStorageKey(step.pdfReference)) {
+      keys.add(step.pdfReference.trim());
+    }
+  }
+  return Array.from(keys);
+}
+
+export async function linkSopMedia(
+  sopId: string,
+  storageKeys: string[],
+  client: SupabaseClient = defaultSupabase
+): Promise<void> {
+  const cleanId = sopId?.trim();
+  const validKeys = Array.from(
+    new Set(
+      (storageKeys || [])
+        .map(k => k?.trim())
+        .filter((k): k is string => Boolean(k && isStorageKey(k)))
+    )
+  );
+
+  if (!cleanId || validKeys.length === 0) {
+    return;
+  }
+
+  const { error: rpcError } = await client.rpc('fn_link_sop_media', {
+    p_sop_id: cleanId,
+    p_storage_keys: validKeys
+  });
+
+  if (rpcError) {
+    if (rpcError.code === '42501' || rpcError.message?.includes('Permission denied')) {
+      throw new Error('Permission denied. Support or Admin role required.');
+    }
+    throw new Error(`Failed to associate media with SOP: ${rpcError.message}`);
+  }
+}
+
+export function formatSopStep(s: Step | Omit<Step, 'number'>, index: number): Step {
+  const step: Step = {
+    number: typeof (s as Step).number === 'number' && (s as Step).number > 0 ? (s as Step).number : index + 1,
+    title: s.title?.trim() || '',
+    description: s.description?.trim() || ''
+  };
+
+  const estimatedTime = s.estimatedTime?.trim();
+  if (estimatedTime) {
+    step.estimatedTime = estimatedTime;
+  }
+
+  const screenshot = s.screenshot?.trim();
+  if (screenshot) {
+    step.screenshot = screenshot;
+  }
+
+  const importantNote = s.importantNote?.trim();
+  if (importantNote) {
+    step.importantNote = importantNote;
+  }
+
+  const successIndicator = s.successIndicator?.trim();
+  if (successIndicator) {
+    step.successIndicator = successIndicator;
+  }
+
+  const videoLink = s.videoLink?.trim();
+  if (videoLink) {
+    step.videoLink = videoLink;
+  }
+
+  const pdfReference = s.pdfReference?.trim();
+  if (pdfReference) {
+    step.pdfReference = pdfReference;
+  }
+
+  return step;
+}
+
 export async function createSop(
   input: CreateSopInput,
   client: SupabaseClient = defaultSupabase
@@ -174,11 +271,7 @@ export async function createSop(
 
   const sopId = String(codeData);
 
-  const formattedSteps = (input.steps || []).map((s, i) => ({
-    number: i + 1,
-    title: s.title?.trim() || '',
-    description: s.description?.trim() || ''
-  }));
+  const formattedSteps = (input.steps || []).map((s, i) => formatSopStep(s, i));
 
   const initialRevision: Revision = {
     version: '1.0.0',
@@ -223,7 +316,23 @@ export async function createSop(
     throw new Error('Failed to create SOP: No data returned from database.');
   }
 
-  return mapSopRowToSop(data as DatabaseSopRow);
+  const createdSop = mapSopRowToSop(data as DatabaseSopRow);
+
+  const stepStorageKeys = extractStepStorageKeys(formattedSteps);
+  if (stepStorageKeys.length > 0) {
+    try {
+      await linkSopMedia(sopId, stepStorageKeys, client);
+    } catch (err) {
+      console.warn('Could not link media to created SOP:', err);
+      return {
+        ...createdSop,
+        warning: MEDIA_LINKING_WARNING,
+        mediaWarning: MEDIA_LINKING_WARNING
+      };
+    }
+  }
+
+  return createdSop;
 }
 
 export interface UpdateSopInput {
@@ -268,11 +377,7 @@ export async function updateSop(
     throw new Error('Provide when to use this SOP.');
   }
 
-  const formattedSteps = (input.steps || []).map((s, i) => ({
-    number: i + 1,
-    title: s.title?.trim() || '',
-    description: s.description?.trim() || ''
-  }));
+  const formattedSteps = (input.steps || []).map((s, i) => formatSopStep(s, i));
 
   const updatePayload: Record<string, unknown> = {
     title: trimmedTitle,
@@ -316,7 +421,23 @@ export async function updateSop(
     throw new Error('Failed to update SOP: SOP not found or already deleted.');
   }
 
-  return mapSopRowToSop(data as DatabaseSopRow);
+  const updatedSop = mapSopRowToSop(data as DatabaseSopRow);
+
+  const stepStorageKeys = extractStepStorageKeys(formattedSteps);
+  if (stepStorageKeys.length > 0) {
+    try {
+      await linkSopMedia(cleanId, stepStorageKeys, client);
+    } catch (err) {
+      console.warn('Could not link media to updated SOP:', err);
+      return {
+        ...updatedSop,
+        warning: MEDIA_LINKING_WARNING,
+        mediaWarning: MEDIA_LINKING_WARNING
+      };
+    }
+  }
+
+  return updatedSop;
 }
 
 export async function softDeleteSop(

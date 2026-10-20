@@ -1,0 +1,272 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://icebergplaybook.local/schemas/default-content.schema.json",
+  "title": "Iceberg Default Content Bundle",
+  "description": "Vendor-neutral schema for canonical default onboarding content bundles in Iceberg Playbook.",
+  "type": "object",
+  "required": [
+    "version",
+    "playbooks",
+    "sops"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "playbooks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/Playbook"
+      }
+    },
+    "sops": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/SOP"
+      }
+    }
+  },
+  "definitions": {
+    "LogicalKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "MediaReference": {
+      "type": "string",
+      "description": "Media reference must be a relative path under assets/ or an https URL. data: and javascript: schemes are explicitly rejected.",
+      "pattern": "^(?:assets\\/[a-zA-Z0-9_\\-\\.\\/]+|https:\\/\\/[^\\s]+)$",
+      "not": {
+        "pattern": "^(?:data|javascript):"
+      }
+    },
+    "Revision": {
+      "type": "object",
+      "required": [
+        "version",
+        "date",
+        "updatedBy",
+        "changes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "changes": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Step": {
+      "type": "object",
+      "required": [
+        "number",
+        "title",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "estimatedTime": {
+          "type": "string"
+        },
+        "screenshot": {
+          "$ref": "#/definitions/MediaReference"
+        },
+        "importantNote": {
+          "type": "string"
+        },
+        "successIndicator": {
+          "type": "string"
+        },
+        "videoLink": {
+          "$ref": "#/definitions/MediaReference"
+        },
+        "pdfReference": {
+          "$ref": "#/definitions/MediaReference"
+        }
+      }
+    },
+    "Playbook": {
+      "type": "object",
+      "required": [
+        "key",
+        "name",
+        "code",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/definitions/LogicalKey"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "icon": {
+          "type": "string"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "Internal",
+            "Public"
+          ]
+        }
+      }
+    },
+    "SOP": {
+      "type": "object",
+      "required": [
+        "key",
+        "playbookKey",
+        "title",
+        "owner",
+        "status",
+        "estimatedTime",
+        "purpose",
+        "whenToUse",
+        "requirements",
+        "responsibleTeam",
+        "checklist",
+        "steps",
+        "escalationRules",
+        "completionCriteria",
+        "relatedIssues",
+        "relatedGuides",
+        "internalNotes",
+        "revisionHistory"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/definitions/LogicalKey"
+        },
+        "playbookKey": {
+          "$ref": "#/definitions/LogicalKey"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Verified",
+            "Draft"
+          ]
+        },
+        "estimatedTime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "whenToUse": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requirements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "responsibleTeam": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checklist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/Step"
+          }
+        },
+        "escalationRules": {
+          "type": "string"
+        },
+        "completionCriteria": {
+          "type": "string"
+        },
+        "relatedIssues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "relatedGuides": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "internalNotes": {
+          "type": "string"
+        },
+        "revisionHistory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Revision"
+          }
+        }
+      }
+    }
+  }
+}

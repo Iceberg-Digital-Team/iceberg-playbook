@@ -1,5 +1,6 @@
 import { useState, useRef, useId, useEffect, type DragEvent, type ChangeEvent } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
+import './Knowledge.css';
 import { formatFileSize, parseMediaMetadata, registerMediaMetadata, type FileMetadata } from './mediaUtils';
 import { safeMediaUrl } from '../../guideTemplate';
 import { uploadMedia, validateMediaFile, getSignedMediaUrl, isStorageKey } from '../../services/mediaService';
@@ -18,6 +19,8 @@ export interface MediaUploadFieldProps {
   entityId?: string;
   onChange: (url: string, file: File | null, storageKey?: string) => void;
   showPreviewImage?: boolean;
+  allowExternalUrl?: boolean;
+  externalUrlPlaceholder?: string;
 }
 
 export function MediaUploadField({
@@ -34,6 +37,8 @@ export function MediaUploadField({
   entityId,
   onChange,
   showPreviewImage = false,
+  allowExternalUrl = false,
+  externalUrlPlaceholder,
 }: MediaUploadFieldProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -41,6 +46,16 @@ export function MediaUploadField({
   const [previewUrl, setPreviewUrl] = useState<string>(value || '');
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
+  const isExternalUrl = Boolean(
+    value &&
+    (value.startsWith('http://') || value.startsWith('https://'))
+  );
+  const [userSelectedMode, setUserSelectedMode] = useState<'upload' | 'link' | null>(null);
+  const mode = userSelectedMode ?? (isExternalUrl ? 'link' : 'upload');
+
+  const setMode = (newMode: 'upload' | 'link') => {
+    setUserSelectedMode(newMode);
+  };
 
   // If value is a storage key, resolve signed preview at runtime
   useEffect(() => {
@@ -85,6 +100,30 @@ export function MediaUploadField({
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleExternalUrlChange = (newUrl: string) => {
+    const trimmed = newUrl.trim();
+    if (!trimmed) {
+      setError('');
+      onChange('', null, '');
+      return;
+    }
+
+    if (!trimmed.startsWith('https://') && !trimmed.startsWith('http://')) {
+      setError('Please enter a valid URL starting with https://');
+      onChange(trimmed, null, '');
+      return;
+    }
+
+    try {
+      new URL(trimmed);
+      setError('');
+    } catch {
+      setError('Please enter a valid URL format.');
+    }
+
+    onChange(trimmed, null, '');
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -140,8 +179,12 @@ export function MediaUploadField({
     }
   };
 
-  const hasSelectedMedia = Boolean((value && value.trim()) || (previewUrl && previewUrl.trim()));
-  const isRemoved = Boolean(!hasSelectedMedia && initialValue && initialValue.trim());
+  const hasSelectedMedia = Boolean(
+    allowExternalUrl
+      ? (value && isStorageKey(value)) || (previewUrl && isStorageKey(previewUrl))
+      : (value && value.trim()) || (previewUrl && previewUrl.trim())
+  );
+  const isRemoved = Boolean(!hasSelectedMedia && initialValue && initialValue.trim() && (!allowExternalUrl || isStorageKey(initialValue)));
   const isReplaced = Boolean(hasSelectedMedia && initialValue && value !== initialValue);
 
   // Metadata determination
@@ -155,137 +198,213 @@ export function MediaUploadField({
 
   return (
     <div className="media-upload-container">
-      <input
-        ref={inputRef}
-        id={inputId}
-        type="file"
-        accept={accept}
-        onChange={handleFileChange}
-        style={{ display: 'none' }}
-        aria-label={buttonText}
-        disabled={isUploading}
-      />
-
-      {isUploading ? (
-        <div className="media-upload-area is-uploading">
-          <div className="media-upload-content">
-            <Loader2 size={24} className="spin" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
-            <span className="media-drop-text">Uploading {type} to secure storage…</span>
-          </div>
-          <p className="helper-text media-format-text">Please wait while your file is securely uploaded.</p>
+      {allowExternalUrl && (
+        <div className="media-mode-tabs" role="tablist" aria-label="Media source selection">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'upload'}
+            className={`media-mode-btn ${mode === 'upload' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('upload');
+              setError('');
+            }}
+          >
+            Upload File
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'link'}
+            className={`media-mode-btn ${mode === 'link' ? 'active' : ''}`}
+            onClick={() => {
+              setMode('link');
+              setError('');
+            }}
+          >
+            External Link
+          </button>
         </div>
-      ) : hasSelectedMedia ? (
-        <div className={`media-selected-card ${type === 'video' ? 'media-video-card' : ''}`}>
-          {type === 'video' && safeSrc && (
-            <div className="media-preview-video-container">
-              <video
-                className="media-preview-video"
-                controls
-                preload="metadata"
-                src={safeSrc}
-              />
+      )}
+
+      {allowExternalUrl && mode === 'link' ? (
+        <div className="media-external-link-container">
+          <div className="media-external-input-row">
+            <input
+              type="url"
+              className="media-external-input"
+              placeholder={
+                externalUrlPlaceholder ||
+                (type === 'video'
+                  ? 'https://example.com/video.mp4 or YouTube / Vimeo link'
+                  : 'https://example.com/document.pdf')
+              }
+              value={isExternalUrl ? (value || '') : ''}
+              aria-label={type === 'video' ? 'External video URL' : 'External PDF URL'}
+              onChange={e => handleExternalUrlChange(e.target.value)}
+            />
+            {value && isExternalUrl && (
+              <button
+                type="button"
+                className="btn-secondary media-action-btn"
+                onClick={() => {
+                  setError('');
+                  onChange('', null, '');
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {value && isExternalUrl && !error && (
+            <div className="media-external-preview-hint">
+              <a
+                href={value}
+                target="_blank"
+                rel="noreferrer"
+                className="media-external-link-preview"
+              >
+                Test link ↗
+              </a>
             </div>
           )}
-
-          <div className="media-file-info-row">
-            {type === 'pdf' && (
-              <div className="media-file-icon">
-                <FileText size={20} aria-hidden="true" />
-              </div>
-            )}
-
-            {(type === 'image' || showPreviewImage) && safeSrc && (
-              <div className="media-preview-thumb">
-                <img src={safeSrc} alt={displayName || 'Screenshot preview'} />
-              </div>
-            )}
-
-            <div className="media-file-info">
-              <div className="media-file-name-container">
-                <span className="media-file-name">{displayName}</span>
-                {isReplaced && <span className="media-badge-status">Replacement pending</span>}
-              </div>
-              {displaySize && <span className="media-file-size helper-text">{displaySize}</span>}
-            </div>
-
-            <div className="media-file-actions">
-              {type === 'pdf' && safeSrc && (
-                <a
-                  className="btn-secondary media-action-btn"
-                  href={safeSrc}
-                  target="_blank"
-                  rel="noreferrer"
-                  download={displayName}
-                >
-                  View PDF
-                </a>
-              )}
-              <button
-                type="button"
-                className="btn-secondary media-action-btn"
-                onClick={handleReplace}
-              >
-                {replaceButtonText}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary media-action-btn"
-                onClick={handleRemove}
-              >
-                {removeButtonText}
-              </button>
-            </div>
-          </div>
-          {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
-        </div>
-      ) : isRemoved ? (
-        <div className="media-upload-area media-removed-area">
-          <div className="media-removed-row">
-            <span className="media-removed-text">
-              {type === 'video' ? 'No video attached' : type === 'pdf' ? 'No PDF attached' : 'No screenshot attached'}
-            </span>
-            <div className="media-removed-actions">
-              <button
-                type="button"
-                className="btn-secondary media-choose-btn"
-                onClick={() => inputRef.current?.click()}
-              >
-                {buttonText}
-              </button>
-              {initialValue && (
-                <button
-                  type="button"
-                  className="btn-secondary media-action-btn"
-                  onClick={handleUndoRemove}
-                >
-                  Undo Remove
-                </button>
-              )}
-            </div>
-          </div>
           {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
         </div>
       ) : (
-        <div
-          className={`media-upload-area ${isDragging ? 'is-dragging' : ''}`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="media-upload-content">
-            <span className="media-drop-text">{dropText}</span>
-            <span className="media-or-divider">or</span>
-            <button
-              type="button"
-              className="btn-secondary media-choose-btn"
-              onClick={() => inputRef.current?.click()}
+        <>
+          <input
+            ref={inputRef}
+            id={inputId}
+            type="file"
+            accept={accept}
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+            aria-label={buttonText}
+            disabled={isUploading}
+          />
+
+          {isUploading ? (
+            <div className="media-upload-area is-uploading">
+              <div className="media-upload-content">
+                <Loader2 size={24} className="spin" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }} />
+                <span className="media-drop-text">Uploading {type} to secure storage…</span>
+              </div>
+              <p className="helper-text media-format-text">Please wait while your file is securely uploaded.</p>
+            </div>
+          ) : hasSelectedMedia ? (
+            <div className={`media-selected-card ${type === 'video' ? 'media-video-card' : ''}`}>
+              {type === 'video' && safeSrc && (
+                <div className="media-preview-video-container">
+                  <video
+                    className="media-preview-video"
+                    controls
+                    preload="metadata"
+                    src={safeSrc}
+                  />
+                </div>
+              )}
+
+              <div className="media-file-info-row">
+                {type === 'pdf' && (
+                  <div className="media-file-icon">
+                    <FileText size={20} aria-hidden="true" />
+                  </div>
+                )}
+
+                {(type === 'image' || showPreviewImage) && safeSrc && (
+                  <div className="media-preview-thumb">
+                    <img src={safeSrc} alt={displayName || 'Screenshot preview'} />
+                  </div>
+                )}
+
+                <div className="media-file-info">
+                  <div className="media-file-name-container">
+                    <span className="media-file-name">{displayName}</span>
+                    {isReplaced && <span className="media-badge-status">Replacement pending</span>}
+                  </div>
+                  {displaySize && <span className="media-file-size helper-text">{displaySize}</span>}
+                </div>
+
+                <div className="media-file-actions">
+                  {type === 'pdf' && safeSrc && (
+                    <a
+                      className="btn-secondary media-action-btn"
+                      href={safeSrc}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={displayName}
+                    >
+                      View PDF
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-secondary media-action-btn"
+                    onClick={handleReplace}
+                  >
+                    {replaceButtonText}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary media-action-btn"
+                    onClick={handleRemove}
+                  >
+                    {removeButtonText}
+                  </button>
+                </div>
+              </div>
+              {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
+            </div>
+          ) : isRemoved ? (
+            <div className="media-upload-area media-removed-area">
+              <div className="media-removed-row">
+                <span className="media-removed-text">
+                  {type === 'video' ? 'No video attached' : type === 'pdf' ? 'No PDF attached' : 'No screenshot attached'}
+                </span>
+                <div className="media-removed-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary media-choose-btn"
+                    onClick={() => inputRef.current?.click()}
+                  >
+                    {buttonText}
+                  </button>
+                  {initialValue && (
+                    <button
+                      type="button"
+                      className="btn-secondary media-action-btn"
+                      onClick={handleUndoRemove}
+                    >
+                      Undo Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
+            </div>
+          ) : (
+            <div
+              className={`media-upload-area ${isDragging ? 'is-dragging' : ''}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
             >
-              {buttonText}
-            </button>
-          </div>
-          <p className="helper-text media-format-text">{acceptedFormatsText}</p>
-          {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
-        </div>
+              <div className="media-upload-content">
+                <span className="media-drop-text">{dropText}</span>
+                <span className="media-or-divider">or</span>
+                <button
+                  type="button"
+                  className="btn-secondary media-choose-btn"
+                  onClick={() => inputRef.current?.click()}
+                >
+                  {buttonText}
+                </button>
+              </div>
+              <p className="helper-text media-format-text">{acceptedFormatsText}</p>
+              {error && <p className="knowledge-error media-inline-error" role="alert">{error}</p>}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

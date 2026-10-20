@@ -36,15 +36,97 @@ function Screenshot({ src, title }: { src: string; title: string }) {
   if (!url) return <p className="helper-text">Screenshot reference: {src}</p>;
   return <figure className="step-screenshot">{!failed && <a href={url} target="_blank" rel="noreferrer"><img loading="lazy" src={url} alt={title} onError={() => setFailed(true)}/></a>}<figcaption><a href={url} target="_blank" rel="noreferrer">{failed ? 'Image unavailable. Open original screenshot' : 'Open full-size screenshot'}</a></figcaption></figure>;
 }
-export function StepsSection({ steps, title = 'Step-by-Step' }: { steps: Step[]; linkedMedia?: boolean; title?: string }) {
+export function StepsSection({
+  steps,
+  title = 'Step-by-Step',
+  inlineDirectVideo = false
+}: {
+  steps: Step[];
+  linkedMedia?: boolean;
+  title?: string;
+  inlineDirectVideo?: boolean;
+}) {
   if (!steps.length) return null;
-  return <section className="article-section steps-section"><h2>{title}</h2><ol className="article-steps">{steps.map((step, i) => <li key={i}>
-    <span className="step-number" aria-label={`Step ${i+1}`}>{String(i+1).padStart(2,'0')}</span><div className="step-content"><div className="step-heading"><h3>{step.title}</h3>{step.estimatedTime && <span className="helper-text">{step.estimatedTime}</span>}</div>
-    <p>{step.description}</p>{step.screenshot && <Screenshot key={step.screenshot} src={step.screenshot} title={`${step.title} — screenshot`} />}
-    {step.importantNote && <div className="step-note"><strong>Important</strong><p>{step.importantNote}</p></div>}
-    {step.successIndicator && <div className="step-result"><CheckCircle2 size={17} aria-hidden="true"/><div><strong>Expected Result</strong><p>{step.successIndicator}</p></div></div>}
-    <div className="inline-actions">{step.videoLink && (safeMediaUrl(step.videoLink) ? <a href={safeMediaUrl(step.videoLink)} target="_blank" rel="noreferrer">Watch video chapter</a> : <span className="helper-text">Video reference: {step.videoLink}</span>)}{step.pdfReference && (safeMediaUrl(step.pdfReference) ? <a href={safeMediaUrl(step.pdfReference)} target="_blank" rel="noreferrer">Read PDF reference</a> : <span className="helper-text">PDF reference: {step.pdfReference}</span>)}</div>
-    </div></li>)}</ol></section>;
+  return (
+    <section className="article-section steps-section">
+      <h2>{title}</h2>
+      <ol className="article-steps">
+        {steps.map((step, i) => {
+          const safeVideo = safeMediaUrl(step.videoLink);
+          const isDirectVideo = Boolean(
+            inlineDirectVideo &&
+              safeVideo &&
+              (safeVideo.startsWith('blob:') || /\.(mp4|webm|mov|ogg)(?:$|\?|#)/i.test(safeVideo))
+          );
+          return (
+            <li key={i}>
+              <span className="step-number" aria-label={`Step ${i + 1}`}>
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <div className="step-content">
+                <div className="step-heading">
+                  <h3>{step.title}</h3>
+                  {step.estimatedTime && <span className="helper-text">{step.estimatedTime}</span>}
+                </div>
+                <p>{step.description}</p>
+                {step.screenshot && (
+                  <Screenshot
+                    key={step.screenshot}
+                    src={step.screenshot}
+                    title={`${step.title} — screenshot`}
+                  />
+                )}
+                {isDirectVideo && (
+                  <div className="step-video" style={{ marginTop: '10px', maxWidth: '640px' }}>
+                    <video
+                      className="guide-video"
+                      controls
+                      preload="metadata"
+                      src={safeVideo}
+                    />
+                  </div>
+                )}
+                {step.importantNote && (
+                  <div className="step-note">
+                    <strong>Important</strong>
+                    <p>{step.importantNote}</p>
+                  </div>
+                )}
+                {step.successIndicator && (
+                  <div className="step-result">
+                    <CheckCircle2 size={17} aria-hidden="true" />
+                    <div>
+                      <strong>Expected Result</strong>
+                      <p>{step.successIndicator}</p>
+                    </div>
+                  </div>
+                )}
+                <div className="inline-actions">
+                  {step.videoLink &&
+                    !isDirectVideo &&
+                    (safeVideo ? (
+                      <a href={safeVideo} target="_blank" rel="noreferrer">
+                        Watch video chapter
+                      </a>
+                    ) : (
+                      <span className="helper-text">Video reference: {step.videoLink}</span>
+                    ))}
+                  {step.pdfReference &&
+                    (safeMediaUrl(step.pdfReference) ? (
+                      <a href={safeMediaUrl(step.pdfReference)} target="_blank" rel="noreferrer">
+                        Read PDF reference
+                      </a>
+                    ) : (
+                      <span className="helper-text">PDF reference: {step.pdfReference}</span>
+                    ))}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }
 export function CommonProblemsAccordion({ problems }: { problems: CommonProblem[] }) {
   if (!problems.length) return null;

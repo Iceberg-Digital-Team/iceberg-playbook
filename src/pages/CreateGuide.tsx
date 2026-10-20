@@ -455,7 +455,13 @@ function GuideEditor({ initial }: { initial?: VersionedGuide }) {
             </FormSection>
 
             <FormSection title="Step-by-Step">
-              <StepEditor steps={steps} initialSteps={base?.steps} onChange={setSteps} />
+              <StepEditor
+                steps={steps}
+                initialSteps={base?.steps}
+                domain="guides"
+                entityId={base?.id}
+                onChange={setSteps}
+              />
             </FormSection>
 
             <FormSection title="PDF Guide" optional open={!!pdf || !!pdfStorageKey}>
