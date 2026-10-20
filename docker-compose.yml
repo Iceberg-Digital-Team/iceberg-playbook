@@ -29,6 +29,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-please-123}
       ADMIN_NAME: Local Admin
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      PURGE_DEMO_DATA: ${PURGE_DEMO_DATA:-false}
     volumes:
       - storage:/data/storage
     user: "0:0" # named volumes are root-owned; production uses RAILWAY_RUN_UID=0 for the same reason

@@ -76,10 +76,12 @@ The importer signs in as an Admin and only uses the same API and rules as the ap
 ## Removing demo data
 
 If the app was first started with `SEED_DEMO_DATA=true`, the demo playbooks / issues / guides
-from `05_seed_data.sql` are in the database. Set `SEED_DEMO_DATA=false` and run
-[`server/db/remove_demo_data.sql`](../server/db/remove_demo_data.sql) once (Railway → PostgreSQL
-service → Data → Query, or `psql "$DATABASE_URL" -f server/db/remove_demo_data.sql`). It deletes
-only those exact demo ids; content people created is kept.
+from `05_seed_data.sql` are in the database. Set `SEED_DEMO_DATA=false`, then add the variable
+`PURGE_DEMO_DATA=true` and redeploy: on start the server runs
+[`server/db/remove_demo_data.sql`](../server/db/remove_demo_data.sql) and logs `[purge] done`.
+**Remove `PURGE_DEMO_DATA` afterwards.** Only those exact demo ids are deleted; content people
+created is kept. (Railway's Data → Query box accepts a single `SELECT` only, so the script cannot
+be pasted there; with psql you can also run `psql "$DATABASE_URL" -f server/db/remove_demo_data.sql`.)
 
 ## Operations notes
 

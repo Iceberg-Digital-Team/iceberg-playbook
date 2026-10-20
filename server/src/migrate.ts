@@ -51,3 +51,18 @@ export async function migrate(): Promise<void> {
     client.release();
   }
 }
+
+// One-off cleanup, enabled with PURGE_DEMO_DATA=true: deletes only the records of
+// 05_seed_data.sql (see server/db/remove_demo_data.sql). Remove the variable afterwards.
+export async function purgeDemoData(): Promise<void> {
+  if (!config.purgeDemoData) return;
+  if (config.seedDemoData) {
+    throw new Error('PURGE_DEMO_DATA and SEED_DEMO_DATA cannot both be true.');
+  }
+  const sql = await readFile(path.join(root, 'server', 'db', 'remove_demo_data.sql'), 'utf8');
+  console.log('[purge] removing demo data (PURGE_DEMO_DATA=true)');
+  const result = await pool.query(sql);
+  const summary = (Array.isArray(result) ? result : [result]).at(-2) ?? result;
+  console.log('[purge] done; remaining rows:', JSON.stringify((summary as { rows?: unknown }).rows ?? []));
+  console.log('[purge] Remove PURGE_DEMO_DATA from the service variables.');
+}
