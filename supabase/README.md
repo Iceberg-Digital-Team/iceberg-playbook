@@ -39,18 +39,30 @@ All database schema definitions, security rules, routines, and seed datasets are
 | **`10_restore_playbook.sql`** | The team lead's migration (arrives from `main`). Must run before the User Management migrations 11–13. |
 | **`11_user_management.sql`** | User Management data model: `profiles.status` (`Active` / `Disabled`), the `user_invitations` table (invitation and password reset links, token stored only as SHA-256 hash, activation lease columns), constraints and indexes. See `docs/USER_MANAGEMENT_API.md`. *(PROPOSED, not deployed yet.)* |
 | **`12_user_invitation_security.sql`** | User Management security: RLS and privileges for `user_invitations`, role/status and no-delete triggers, `fn_admin_*` / activation (claim, release, accept) functions, rate limit table and `fn_rate_limit_hit`, and changes to `fn_user_role`, `fn_get_current_actor` and the `profiles` delete / insert policies. *(PROPOSED, not deployed yet.)* |
-| **`13_auth_user_lookup.sql`** | Server-only `fn_find_auth_user_by_email` used by the `auth-links` Edge Function during account activation. *(PROPOSED, not deployed yet.)* |
-| **`supabase/functions/`** (Edge Functions) | `admin-users` (admin operations; verifies the caller's JWT and active Admin role itself) and `auth-links` (link lookup + activation, deployed with `--no-verify-jwt`, with its own rate limiting), shared code in `_shared/`. Deploy steps: `docs/USER_MANAGEMENT_API.md` §14. *(Not deployed yet.)* |
+| **`13_auth_user_lookup.sql`** | Auth user lookup helper `public.fn_find_auth_user_by_email` restricted to `service_role` for safe account reuse during invitation activation. |
+| **`14_sop_media_link.sql`** | Declares `fn_link_sop_media` to atomically associate uploaded media storage keys with active SOPs in `public.media_files`. |
+| **`15_sop_media_link_fix.sql`** | Upgrades `fn_link_sop_media` to use the project-standard `public.fn_is_support_or_admin()` security helper. |
+| **`16_orphan_media_audit.sql`** | Defines read-only maintenance function `public.fn_audit_orphan_media` inspecting storage objects against authoritative content references with a 24-hour grace period. |
+| **`17_sop_bootstrap_key.sql`** | Adds scoped `bootstrap_key` column and partial unique index on `(playbook_id, bootstrap_key)` for deterministic canonical bundle ownership. |
+| **`supabase/functions/`** (Edge Functions) | `admin-users` (admin operations; verifies the caller's JWT and active Admin role itself) and `auth-links` (link lookup + activation, deployed with `--no-verify-jwt`, with its own rate limiting), shared code in `_shared/`. Deploy steps: `docs/USER_MANAGEMENT_API.md` §14. |
 
 ---
 
-## 3. Safe Migration Order
+## 3. Safe Migration Order & Handover Caveats
 
-When preparing a database environment, migrations must be executed in a defined order. A critical distinction exists between **structural application migrations** and **demo seed data**:
+> [!WARNING]
+> ### REFERENCE DATABASE MIGRATION HISTORY CAVEAT
+> **DO NOT RUN `supabase db push` OR ATTEMPT AUTOMATED MIGRATION REPAIR AGAINST THE EXISTING REFERENCE SUPABASE INSTANCE.**
+>
+> The remote reference Supabase database (`xwqqngkjlsgwsvacmjmf`) contains timestamp-based versions in its internal `schema_migrations` table from earlier direct/manual setups. As a result, its remote migration history does not map 1:1 to the local sequential filenames (`01_` through `17_`).
+>
+> - **Do not run `supabase db push`** against the reference project.
+> - **Do not attempt to normalize or repair** remote migration history on that instance.
+> - For a clean new deployment, treat the local numbered migration files `01_` through `17_` as the **authoritative, sequential reference specification** for schema, security rules, and business logic when creating migrations for Iceberg's target database.
 
-### Structural / Required Migrations (Production & All Environments)
+### Structural / Required Migrations (Sequential Order)
 
-The following migrations establish the schema, security model, and stored procedures required for the application to function:
+When creating or deploying a clean database environment, execute the structural migrations in sequential order:
 
 1. `01_schema_and_types.sql`
 2. `02_constraints_and_indexes.sql`
@@ -60,16 +72,20 @@ The following migrations establish the schema, security model, and stored proced
 6. `07_soft_delete_security.sql`
 7. `08_monotonic_code_generation.sql`
 8. `09_issue_jira_code.sql`
-9. `10_restore_playbook.sql` (team lead)
+9. `10_restore_playbook.sql`
 10. `11_user_management.sql`
 11. `12_user_invitation_security.sql`
 12. `13_auth_user_lookup.sql`
+13. `14_sop_media_link.sql`
+14. `15_sop_media_link_fix.sql`
+15. `16_orphan_media_audit.sql`
+16. `17_sop_bootstrap_key.sql`
 
 > [!IMPORTANT]
 > **Production Guidance for `05_seed_data.sql`**:
 > - `05_seed_data.sql` contains **development and demo sample records**. It should **NOT** automatically be executed in a production environment.
-> - Migrations `06` through `09` have **no schema or data dependency on `05_seed_data.sql`**. They modify permissions, function security contexts, and table columns.
-> - In automated CI/CD runners or local development where all numbered files run in alphanumeric order (`01` through `09`), `05_seed_data.sql` is safe to run because of its `ON CONFLICT (id) DO NOTHING` statements. For a clean production deployment, omit `05_seed_data.sql` or execute only the structural migrations.
+> - Migrations `06` through `17` have **no schema or data dependency on `05_seed_data.sql`**. They modify permissions, function security contexts, table columns, and maintenance routines.
+> - In automated CI/CD runners or local development where all numbered files run in alphanumeric order (`01` through `17`), `05_seed_data.sql` is safe to run because of its `ON CONFLICT (id) DO NOTHING` statements. For a clean production deployment, omit `05_seed_data.sql` or execute only the structural migrations.
 
 ---
 
