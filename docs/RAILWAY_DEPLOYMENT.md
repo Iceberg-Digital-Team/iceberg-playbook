@@ -59,13 +59,33 @@ SEED_DEMO_DATA=true docker compose up --build   # with demo content
 7. Open the domain and sign in with the Admin credentials. Remove `ADMIN_PASSWORD` afterwards
    (it is only used while no Admin exists) and invite the rest of the team from **Users**.
 
+## Onboarding content ("Getting Started" playbook, 5 SOPs, 5 tour videos)
+
+Run from your own machine against the deployed app (about 83 MB of videos are uploaded):
+
+```bash
+export BOOTSTRAP_API_URL=https://your-app.up.railway.app
+export BOOTSTRAP_ADMIN_EMAIL=you@example.com
+export BOOTSTRAP_ADMIN_PASSWORD='...'
+npm run bootstrap:content             # dry run, changes nothing
+npm run bootstrap:content -- --apply  # import (safe to re-run)
+```
+
+The importer signs in as an Admin and only uses the same API and rules as the app.
+
+## Removing demo data
+
+If the app was first started with `SEED_DEMO_DATA=true`, the demo playbooks / issues / guides
+from `05_seed_data.sql` are in the database. Set `SEED_DEMO_DATA=false` and run
+[`server/db/remove_demo_data.sql`](../server/db/remove_demo_data.sql) once (Railway → PostgreSQL
+service → Data → Query, or `psql "$DATABASE_URL" -f server/db/remove_demo_data.sql`). It deletes
+only those exact demo ids; content people created is kept.
+
 ## Operations notes
 
 - **Backups:** back up the Postgres service *and* the volume; they belong together.
 - **Scaling:** the volume ties the service to one instance. For several instances move uploads
   to S3-compatible storage (only `server/src/storage.ts` changes).
 - **Rotating `JWT_SECRET`** signs everyone out and invalidates outstanding download links.
-- **Not migrated:** `npm run bootstrap:content` and `npm run storage:audit-orphans` still talk to
-  a Supabase project. Against this stack, load content through the app, or port
-  `scripts/lib/bootstrap/supabase_adapter.mjs` to `server/`'s endpoints.
+- `npm run storage:audit-orphans` still targets a Supabase project and is not ported.
 - Sign-in attempts are throttled per IP+email in memory (per instance).
