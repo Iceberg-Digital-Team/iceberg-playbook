@@ -61,7 +61,14 @@ SEED_DEMO_DATA=true docker compose up --build   # with demo content
 
 ## Onboarding content ("Getting Started" playbook, 5 SOPs, 5 tour videos)
 
-Run from your own machine against the deployed app (about 83 MB of videos are uploaded):
+Easiest, from your own machine (about 83 MB of videos are uploaded; needs Node 20+):
+
+```bash
+./scripts/bootstrap-remote.sh https://your-app.up.railway.app admin@example.com
+```
+
+It asks for the Admin password, shows a dry run, and imports only after you confirm. The manual
+equivalent:
 
 ```bash
 export BOOTSTRAP_API_URL=https://your-app.up.railway.app
