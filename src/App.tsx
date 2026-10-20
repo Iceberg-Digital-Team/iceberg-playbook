@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
+import { SiteCredit } from './components/layout/SiteCredit';
 import { useRouter } from './router';
 
 // Page Views
@@ -115,13 +116,7 @@ function WorkspaceApp() {
         <main className="content-container" id="main-content" tabIndex={-1}>
           <ContentErrorBoundary key={`${path}-${params.id || params.slug || ""}`}>{renderPage()}</ContentErrorBoundary>
         </main>
-        <footer className="site-credit">
-          <img src="/iceberg-icon.png" alt="" aria-hidden="true" className="site-credit-icon" />
-          <span>Developed within Iceberg X by{' '}
-          <a href="https://x.iceberg-digital.co.uk/x/010" target="_blank" rel="noopener noreferrer">Cube #10</a>
-          {' '}and{' '}
-          <a href="https://x.iceberg-digital.co.uk/x/049" target="_blank" rel="noopener noreferrer">Cube #49</a>.</span>
-        </footer>
+        <footer><SiteCredit /></footer>
       </div>
     </div>
   );
