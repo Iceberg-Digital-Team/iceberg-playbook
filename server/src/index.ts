@@ -9,7 +9,7 @@ import { ensureFirstAdmin } from './bootstrap.ts';
 import { config } from './config.ts';
 import { pool } from './db.ts';
 import { functionRoutes } from './functions.ts';
-import { migrate } from './migrate.ts';
+import { migrate, purgeDemoData } from './migrate.ts';
 import { restRoutes } from './rest.ts';
 import { loadSchema } from './schema.ts';
 import { storageRoutes } from './storage.ts';
@@ -73,6 +73,7 @@ async function main() {
     throw new Error(`STORAGE_DIR (${config.storageDir}) is not writable. On Railway set RAILWAY_RUN_UID=0 for the mounted volume.`);
   }
   await migrate();
+  await purgeDemoData();
   await loadSchema();
   await ensureFirstAdmin();
   const server = serve({ fetch: app.fetch, port: config.port }, info => {

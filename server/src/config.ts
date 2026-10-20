@@ -37,6 +37,7 @@ export const config = {
   staticDir: path.resolve(process.env.STATIC_DIR ?? './dist'),
   allowedOrigins: origins(),
   seedDemoData: flag('SEED_DEMO_DATA'),
+  purgeDemoData: flag('PURGE_DEMO_DATA'),
   adminEmail: process.env.ADMIN_EMAIL?.trim() ?? '',
   adminPassword: process.env.ADMIN_PASSWORD ?? '',
   adminName: process.env.ADMIN_NAME?.trim() || 'Administrator',

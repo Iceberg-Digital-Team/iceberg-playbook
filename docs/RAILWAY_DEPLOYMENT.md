@@ -61,7 +61,14 @@ SEED_DEMO_DATA=true docker compose up --build   # with demo content
 
 ## Onboarding content ("Getting Started" playbook, 5 SOPs, 5 tour videos)
 
-Run from your own machine against the deployed app (about 83 MB of videos are uploaded):
+Easiest, from your own machine (about 83 MB of videos are uploaded; needs Node 20+):
+
+```bash
+./scripts/bootstrap-remote.sh https://your-app.up.railway.app admin@example.com
+```
+
+It asks for the Admin password, shows a dry run, and imports only after you confirm. The manual
+equivalent:
 
 ```bash
 export BOOTSTRAP_API_URL=https://your-app.up.railway.app
@@ -76,10 +83,12 @@ The importer signs in as an Admin and only uses the same API and rules as the ap
 ## Removing demo data
 
 If the app was first started with `SEED_DEMO_DATA=true`, the demo playbooks / issues / guides
-from `05_seed_data.sql` are in the database. Set `SEED_DEMO_DATA=false` and run
-[`server/db/remove_demo_data.sql`](../server/db/remove_demo_data.sql) once (Railway → PostgreSQL
-service → Data → Query, or `psql "$DATABASE_URL" -f server/db/remove_demo_data.sql`). It deletes
-only those exact demo ids; content people created is kept.
+from `05_seed_data.sql` are in the database. Set `SEED_DEMO_DATA=false`, then add the variable
+`PURGE_DEMO_DATA=true` and redeploy: on start the server runs
+[`server/db/remove_demo_data.sql`](../server/db/remove_demo_data.sql) and logs `[purge] done`.
+**Remove `PURGE_DEMO_DATA` afterwards.** Only those exact demo ids are deleted; content people
+created is kept. (Railway's Data → Query box accepts a single `SELECT` only, so the script cannot
+be pasted there; with psql you can also run `psql "$DATABASE_URL" -f server/db/remove_demo_data.sql`.)
 
 ## Operations notes
 
