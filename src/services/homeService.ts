@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import { listPlaybooks } from './playbookService';
 import { listIssues } from './issueService';
@@ -17,7 +17,7 @@ export interface RecentSolutionItem {
 }
 
 export async function listRecentSolutions(
-  client: SupabaseClient = defaultSupabase,
+  client: DbClient = defaultSupabase,
   limit: number = 4
 ): Promise<RecentSolutionItem[]> {
   const [playbooks, issues, guides, sops] = await Promise.all([

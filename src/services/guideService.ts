@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import type { VersionedGuide, Step, CommonProblem, FAQ, Revision, GuideVersion } from '../data';
 
@@ -178,7 +178,7 @@ export function mapGuideVersionRowToVersion(row: DatabaseGuideVersionRow): Guide
 }
 
 export async function listGuides(
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<VersionedGuide[]> {
   const { data, error } = await client
     .from('guides')
@@ -198,7 +198,7 @@ export async function listGuides(
 
 export async function listGuidesByPlaybook(
   playbookId: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<VersionedGuide[]> {
   const cleanId = playbookId.trim();
   if (!cleanId) {
@@ -224,7 +224,7 @@ export async function listGuidesByPlaybook(
 
 export async function getGuideById(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<VersionedGuide | null> {
   const cleanId = id.trim();
   if (!cleanId) {
@@ -250,7 +250,7 @@ export async function getGuideById(
 
 export async function getPrimaryGuideByIssue(
   issueId: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<VersionedGuide | null> {
   const cleanId = issueId.trim();
   if (!cleanId) {
@@ -276,7 +276,7 @@ export async function getPrimaryGuideByIssue(
 
 export async function listGuideVersions(
   guideId: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<GuideVersion[]> {
   const cleanId = guideId.trim();
   if (!cleanId) return [];
@@ -299,7 +299,7 @@ export async function listGuideVersions(
 
 export async function createGuide(
   input: CreateGuideInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<VersionedGuide> {
   const issueId = input.issueId?.trim();
   const playbookId = input.playbookId?.trim();
@@ -390,7 +390,7 @@ export async function createGuide(
 
 export async function publishGuideVersion(
   input: PublishGuideVersionInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<VersionedGuide> {
   const guideId = input.guideId?.trim();
   const expectedVersionId = input.expectedVersionId?.trim();
@@ -478,7 +478,7 @@ export async function publishGuideVersion(
 
 export async function restoreGuideVersion(
   input: RestoreGuideVersionInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<VersionedGuide> {
   const guideId = input.guideId?.trim();
   const targetVersionId = input.targetVersionId?.trim();
@@ -530,7 +530,7 @@ export async function restoreGuideVersion(
 
 export async function softDeleteGuide(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<void> {
   const cleanId = id.trim();
   if (!cleanId) {

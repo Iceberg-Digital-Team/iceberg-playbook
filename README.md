@@ -13,6 +13,10 @@ This repository contains a fully functional, Supabase-backed implementation prep
 >
 > **Supabase is the current reference implementation, not a production requirement.** Iceberg is expected to replace Supabase Auth, PostgreSQL/PostgREST, RPCs, Storage, and Edge Functions with Iceberg's target production infrastructure behind existing service and adapter boundaries.
 
+> [!TIP]
+> **Docker / Railway (plain PostgreSQL, no Supabase)**: the repository also ships a Node API (`server/`),
+> a `Dockerfile`, `docker-compose.yml` and `railway.json`. See [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md).
+
 ---
 
 ## 1. Project Overview

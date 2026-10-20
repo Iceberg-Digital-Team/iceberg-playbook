@@ -1,0 +1,38 @@
+# Local production-like stack: PostgreSQL + the app (API + built SPA) on http://localhost:3000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: iceberg
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iceberg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/iceberg
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me-0123456789abcdef}
+      PUBLIC_URL: http://localhost:3000
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-please-123}
+      ADMIN_NAME: Local Admin
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+    volumes:
+      - storage:/data/storage
+    user: "0:0" # named volumes are root-owned; production uses RAILWAY_RUN_UID=0 for the same reason
+
+volumes:
+  pgdata:
+  storage:

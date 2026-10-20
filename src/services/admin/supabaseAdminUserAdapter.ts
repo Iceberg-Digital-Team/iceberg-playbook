@@ -25,7 +25,7 @@ export const AUTH_LINKS_FUNCTION = 'auth-links';
 
 type InvokeMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
-// The small part of SupabaseClient this adapter uses (tests pass a fake).
+// The small part of DbClient this adapter uses (tests pass a fake).
 export interface AdminFunctionsClient {
   auth: {
     getSession(): Promise<{ data: { session: { access_token: string } | null }; error: unknown }>;

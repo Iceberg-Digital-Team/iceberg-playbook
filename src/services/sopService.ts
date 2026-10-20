@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import type { SOP, Step, Revision } from '../data';
 
@@ -71,7 +71,7 @@ export function mapSopRowToSop(row: DatabaseSopRow): SOP {
 }
 
 export async function listSops(
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<SOP[]> {
   const { data, error } = await client
     .from('sops')
@@ -91,7 +91,7 @@ export async function listSops(
 
 export async function listSopsByPlaybook(
   playbookId: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<SOP[]> {
   const cleanId = playbookId.trim();
   if (!cleanId) {
@@ -117,7 +117,7 @@ export async function listSopsByPlaybook(
 
 export async function getSopById(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<SOP | null> {
   const cleanId = id.trim();
   if (!cleanId) {
@@ -170,7 +170,7 @@ export function extractStepStorageKeys(
 export async function linkSopMedia(
   sopId: string,
   storageKeys: string[],
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<void> {
   const cleanId = sopId?.trim();
   const validKeys = Array.from(
@@ -240,7 +240,7 @@ export function formatSopStep(s: Step | Omit<Step, 'number'>, index: number): St
 
 export async function createSop(
   input: CreateSopInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<SOP> {
   const trimmedPlaybookId = input.playbookId?.trim() || '';
   const trimmedTitle = input.title?.trim() || '';
@@ -357,7 +357,7 @@ export interface UpdateSopInput {
 
 export async function updateSop(
   input: UpdateSopInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<SOP> {
   const cleanId = input.id?.trim() || '';
   const trimmedTitle = input.title?.trim() || '';
@@ -442,7 +442,7 @@ export async function updateSop(
 
 export async function softDeleteSop(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<void> {
   const cleanId = id.trim();
   if (!cleanId) {

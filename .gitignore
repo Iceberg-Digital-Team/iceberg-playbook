@@ -30,3 +30,7 @@ dist-ssr
 
 # Supabase local CLI cache
 supabase/.temp/
+
+# Local API server build output and uploaded files
+server/dist
+data

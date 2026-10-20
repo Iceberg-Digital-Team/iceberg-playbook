@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import type { Playbook } from '../data';
 import { toSlug } from '../slug';
@@ -126,7 +126,7 @@ export function aggregatePlaybookCounts(
 }
 
 async function fetchActiveChildRows(
-  client: SupabaseClient,
+  client: DbClient,
   table: 'issues' | 'guides' | 'sops',
   playbookId?: string
 ): Promise<Array<{ playbook_id: string; deleted_at: string | null }>> {
@@ -152,7 +152,7 @@ async function fetchActiveChildRows(
 }
 
 export async function fetchActivePlaybookCounts(
-  client: SupabaseClient = defaultSupabase,
+  client: DbClient = defaultSupabase,
   playbookId?: string
 ): Promise<Record<string, Required<PlaybookCounts>>> {
   const [issues, guides, sops] = await Promise.all([
@@ -165,7 +165,7 @@ export async function fetchActivePlaybookCounts(
 }
 
 export async function listPlaybooks(
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Playbook[]> {
   const pbQuery = client
     .from('playbooks')
@@ -185,14 +185,14 @@ export async function listPlaybooks(
     throw new Error(`Failed to load Playbooks: ${pbRes.error.message}`);
   }
 
-  return (pbRes.data || []).map(row =>
+  return (pbRes.data || []).map((row: DatabasePlaybookRow) =>
     mapPlaybookRowToPlaybook(row, countMap[row.id])
   );
 }
 
 export async function getPlaybookBySlug(
   slug: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Playbook | null> {
   const cleanSlug = slug.trim();
   if (!cleanSlug) {
@@ -223,7 +223,7 @@ export async function getPlaybookBySlug(
 
 export async function checkPlaybookConflict(
   params: { name: string; code: string; slug?: string },
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<PlaybookConflictCheckResult> {
   const trimmedName = params.name.trim();
   const trimmedCode = params.code.trim().toUpperCase();
@@ -335,7 +335,7 @@ export async function checkPlaybookConflict(
 
 export async function findDeletedPlaybookConflict(
   input: { name: string; code: string; slug?: string },
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<DeletedPlaybookConflict | null> {
   const result = await checkPlaybookConflict(input, client);
   if (result.type === 'DELETED_CONFLICT') {
@@ -346,7 +346,7 @@ export async function findDeletedPlaybookConflict(
 
 export async function createPlaybook(
   input: CreatePlaybookInput,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Playbook> {
   const trimmedName = input.name.trim();
   const trimmedCode = input.code.trim().toUpperCase();
@@ -420,7 +420,7 @@ export async function createPlaybook(
 
 export async function restorePlaybook(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Playbook> {
   const cleanId = id.trim();
   if (!cleanId) {
@@ -458,7 +458,7 @@ export async function restorePlaybook(
 
 export async function softDeletePlaybook(
   id: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<void> {
   const cleanId = id.trim();
   if (!cleanId) {

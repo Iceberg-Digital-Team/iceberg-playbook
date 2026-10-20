@@ -1,9 +1,9 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import type { AuthAdapter, AuthSession, Profile, Role, SignInInput } from './auth';
 
 export async function fetchUserProfile(
-  client: SupabaseClient,
+  client: DbClient,
   userId: string
 ): Promise<Profile | null> {
   const { data, error } = await client
@@ -32,7 +32,7 @@ export async function fetchUserProfile(
 }
 
 export function createSupabaseAuthAdapter(
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): AuthAdapter {
   return {
     async signIn(input: SignInInput): Promise<AuthSession> {

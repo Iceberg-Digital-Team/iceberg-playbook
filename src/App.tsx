@@ -115,6 +115,12 @@ function WorkspaceApp() {
         <main className="content-container" id="main-content" tabIndex={-1}>
           <ContentErrorBoundary key={`${path}-${params.id || params.slug || ""}`}>{renderPage()}</ContentErrorBoundary>
         </main>
+        <footer className="site-credit">
+          Developed within Iceberg X by{' '}
+          <a href="https://x.iceberg-digital.co.uk/x/010" target="_blank" rel="noopener noreferrer">Cube #10</a>
+          {' '}and{' '}
+          <a href="https://x.iceberg-digital.co.uk/x/049" target="_blank" rel="noopener noreferrer">Cube #49</a>.
+        </footer>
       </div>
     </div>
   );

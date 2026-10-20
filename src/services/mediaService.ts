@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DbClient } from '../lib/apiClient';
 import { supabase as defaultSupabase } from '../lib/supabase';
 import type { Step, SOP } from '../data';
 
@@ -147,7 +147,7 @@ export function generateStoragePath(
 export async function uploadMedia(
   file: File,
   options: UploadMediaOptions,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<UploadMediaResult> {
   const validation = validateMediaFile(file, options.mediaType);
   if (!validation.valid || !validation.contentType) {
@@ -212,7 +212,7 @@ export async function uploadMedia(
 export async function getSignedMediaUrl(
   storageKeyOrUrl: string,
   expiresIn = 3600,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<string> {
   const clean = storageKeyOrUrl?.trim();
   if (!clean) return '';
@@ -234,7 +234,7 @@ export async function getSignedMediaUrl(
 export async function getSignedMediaUrls(
   storageKeysOrUrls: string[],
   expiresIn = 3600,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Map<string, string>> {
   const result = new Map<string, string>();
   const toFetch: string[] = [];
@@ -268,7 +268,7 @@ export async function getSignedMediaUrls(
 
 export async function removeMedia(
   storageKey: string,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<void> {
   const clean = storageKey?.trim();
   if (!clean || !isStorageKey(clean)) return;
@@ -284,7 +284,7 @@ export async function removeMedia(
 
 export async function resolveStepMedia(
   steps: Step[],
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<Step[]> {
   if (!Array.isArray(steps) || steps.length === 0) {
     return [];
@@ -332,7 +332,7 @@ export async function resolveStepMedia(
 
 export async function resolveSopMedia(
   sop: SOP,
-  client: SupabaseClient = defaultSupabase
+  client: DbClient = defaultSupabase
 ): Promise<SOP> {
   if (!sop) return sop;
   const resolvedSteps = await resolveStepMedia(sop.steps || [], client);
